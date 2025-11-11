@@ -98,3 +98,62 @@ button:hover {
   width: 200px;
   display: inline-block;
 }
+
+/* --- MOBILE-FRIENDLY LAYOUT --- */
+@media (max-width: 768px) {
+  .breeding-grid {
+    gap: 20px;
+    padding: 10px;
+  }
+
+  .grandparents, .parents {
+    flex-direction: column; /* stack on smaller screens */
+    gap: 20px;
+    align-items: center;
+  }
+
+  .gp, .parent {
+    width: 90%; /* make them take most of the screen */
+    padding: 10px;
+  }
+
+  .traitText {
+    width: 100%;
+    font-size: 13px;
+    padding: 5px;
+  }
+
+  #traitsDisplay {
+    width: 90%;
+    font-size: 13px;
+    padding: 5px;
+  }
+
+  canvas {
+    width: 100% !important; /* scale canvas for mobile */
+    height: auto !important;
+  }
+
+  button {
+    width: 80%;
+    padding: 8px 0;
+    font-size: 14px;
+  }
+}
+
+/* --- OPTIONAL: for very small phones --- */
+@media (max-width: 480px) {
+  .gp, .parent {
+    width: 95%;
+    padding: 8px;
+  }
+
+  .traitText, #traitsDisplay {
+    font-size: 12px;
+  }
+
+  button {
+    width: 90%;
+    font-size: 13px;
+  }
+}
