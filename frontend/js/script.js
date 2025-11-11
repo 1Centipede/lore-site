@@ -72,9 +72,11 @@ function breed(p1, p2, grandparentsSet) {
     }
   });
 
-  // Limit traits to 1-3, small chance of 0
+  // --- Limit traits to 1-3, small chance of 0 only if family has zero-trait history ---
   let finalCount = Math.floor(Math.random() * 3) + 1; // 1-3
-  if (Math.random() < 0.05) finalCount = 0;
+  const anyZeroHistory = [p1, p2, ...grandparentsSet].some(c => c.traits.length === 0);
+  if (anyZeroHistory && Math.random() < 0.05) finalCount = 0; // only allow 0 if family had 0
+
   while (traits.length > finalCount) traits.pop();
 
   // --- MUTATION LOGIC ---
