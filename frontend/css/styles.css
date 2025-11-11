@@ -15,6 +15,7 @@ h1 {
   flex-direction: column;
   align-items: center;
   gap: 40px;
+  position: relative;
 }
 
 /* GRANDPARENTS AND PARENTS */
@@ -99,22 +100,53 @@ button:hover {
   display: inline-block;
 }
 
-/* --- MOBILE-FRIENDLY LAYOUT --- */
+/* --- FAMILY TREE LINES --- */
+.breeding-grid::before {
+  content: '';
+  position: absolute;
+  width: 2px;
+  background: #aaa;
+  top: 80px; /* space for grandparents */
+  bottom: 60px; /* space for child */
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 0;
+}
+
+.grandparents,
+.parents,
+.child {
+  position: relative;
+  z-index: 1;
+}
+
+/* --- MOBILE-FRIENDLY TREE LAYOUT --- */
 @media (max-width: 768px) {
   .breeding-grid {
-    gap: 20px;
+    gap: 30px;
     padding: 10px;
   }
 
-  .grandparents, .parents {
-    flex-direction: column; /* stack on smaller screens */
+  .grandparents {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
     gap: 20px;
-    align-items: center;
+    justify-items: center;
+  }
+
+  .parents {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 20px;
+    justify-items: center;
   }
 
   .gp, .parent {
-    width: 90%; /* make them take most of the screen */
-    padding: 10px;
+    width: 90%;
+  }
+
+  .child {
+    width: 90%;
   }
 
   .traitText {
@@ -130,7 +162,7 @@ button:hover {
   }
 
   canvas {
-    width: 100% !important; /* scale canvas for mobile */
+    width: 100% !important;
     height: auto !important;
   }
 
@@ -141,9 +173,14 @@ button:hover {
   }
 }
 
-/* --- OPTIONAL: for very small phones --- */
+/* --- VERY SMALL PHONES --- */
 @media (max-width: 480px) {
-  .gp, .parent {
+  .grandparents,
+  .parents {
+    grid-template-columns: 1fr;
+  }
+
+  .gp, .parent, .child {
     width: 95%;
     padding: 8px;
   }
