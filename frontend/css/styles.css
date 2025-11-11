@@ -51,7 +51,7 @@ button {
   border: none;
   border-radius: 6px;
   background-color: #7b6ef6;
-  color: white;
+  color: rgb(255, 255, 255);
   cursor: pointer;
   font-weight: bold;
   transition: background 0.2s ease;
@@ -98,6 +98,55 @@ button:hover {
   text-align: left;
   width: 200px;
   display: inline-block;
+}
+
+/* DROPDOWN MENU STYLING */
+.traitSelect {
+  margin-top: 10px;
+  text-align: left;
+}
+
+.traitSelect label {
+  font-weight: bold;
+  display: block;
+  margin-bottom: 4px;
+}
+
+.traitSelect select {
+  width: 180px;
+  border-radius: 8px;
+  border: 1px solid #bbb;
+  padding: 4px;
+  background-color: #fafafa;
+  font-size: 14px;
+}
+
+/* --- NEW MULTI-BUTTON DROPDOWN TRAIT SELECT --- */
+.dropdownTraits {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  margin-top: 4px;
+}
+
+.dropdownTraits button {
+  border: 1px solid #aaa;
+  background: #f8f8f8;
+  border-radius: 6px;
+  padding: 2px 6px;
+  cursor: pointer;
+  color: #333;
+  font-weight: normal;
+}
+
+.dropdownTraits button.activeTrait {
+  background: #b1d9ff;
+  border-color: #0077ff;
+}
+
+.dropdownTraits button.resetButton {
+  background-color: red;
+  color: white;
 }
 
 /* --- FAMILY TREE LINES --- */
