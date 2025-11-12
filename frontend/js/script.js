@@ -85,7 +85,7 @@ async function renderCharacter(canvasId, char, blank=false){
       }
     }
     if (char.hasMutation){
-      ctx.fillStyle = "rgba(255,100,255,0.3)"; // why: subtle visual hint
+      ctx.fillStyle = "rgba(255,100,255,0.3)"; // why: visual hint
       ctx.fillRect(0,0,el.width,el.height);
     }
   }
@@ -238,6 +238,7 @@ function breed(p1, p2, grandparentsSet = []) {
     TRIM_2_TO_1: 0.10,
   };
 
+  // family frequency
   const score = new Map(keys.map(k=>[k,0]));
   const bump = (arr)=>{ if (!Array.isArray(arr)) return; [...new Set(arr)].forEach(t=>score.set(t,(score.get(t)||0)+1)); };
   bump(p1Traits); bump(p2Traits);
@@ -245,7 +246,7 @@ function breed(p1, p2, grandparentsSet = []) {
 
   const chosen = [];
 
-  // Shared first
+  // shared first
   const sharedBoth = intersect(p1Traits, p2Traits);
   if (sharedBoth.length > 0){
     chosen.push(sample(sharedBoth));
@@ -256,7 +257,7 @@ function breed(p1, p2, grandparentsSet = []) {
     }
   }
 
-  // Others
+  // others
   keys.forEach(t=>{
     if (chosen.includes(t)) return;
     const count = score.get(t) || 0;
@@ -283,20 +284,22 @@ function breed(p1, p2, grandparentsSet = []) {
     }
   });
 
-  // Diversify if clone
+  // diversify if clone
   const diversifyIfClone = () => {
     const noMutChosen = chosen.filter(t=>t!=="mutation");
     const p1Only = p1Traits.filter(t=>!p2Traits.includes(t));
     const p2Only = p2Traits.filter(t=>!p1Traits.includes(t));
+
     const nudge = (dropFrom, addFrom) => {
-      const drop = sample(dropFrom) || sample(noMutChosen);
-      const add  = sample(addFrom);
+      const drop = (dropFrom.length ? sample(dropFrom) : sample(noMutChosen));
+      const add  = addFrom.length ? sample(addFrom) : null;
       if (drop != null) {
         const idx = chosen.indexOf(drop);
         if (idx>-1) chosen.splice(idx, 1);
       }
       if (add && !chosen.includes(add) && chosen.length < 3) chosen.push(add);
     };
+
     if (equalSets(noMutChosen, p1Traits) && noMutChosen.length && Math.random() < PROB.DIVERSIFY_PARENT_CLONE) {
       p2Only.length ? nudge(noMutChosen.filter(t => !p2Traits.includes(t)), p2Only) : nudge(noMutChosen, []);
     } else if (equalSets(noMutChosen, p2Traits) && noMutChosen.length && Math.random() < PROB.DIVERSIFY_PARENT_CLONE) {
@@ -305,7 +308,7 @@ function breed(p1, p2, grandparentsSet = []) {
   };
   diversifyIfClone();
 
-  // Parents-different bonus
+  // parents-different bonus
   const parentsDifferent =
     new Set([...p1Traits, ...p2Traits]).size >
     Math.max(p1Count, p2Count);
@@ -314,7 +317,7 @@ function breed(p1, p2, grandparentsSet = []) {
     if (pool.length) chosen.push(sample(pool));
   }
 
-  // Early ancestral echo (enables 0-trait outcomes)
+  // early ancestral echo
   let echoEmptied = false;
   if (zeroGPCount > 0 && parentsHaveTraits){
     const emptyP = (zeroGPCount === 1) ? PROB.ECHO_EMPTY_1GP : PROB.ECHO_EMPTY_2GP;
@@ -328,7 +331,7 @@ function breed(p1, p2, grandparentsSet = []) {
     }
   }
 
-  // Fallbacks (don’t refill if echo emptied)
+  // fallbacks (don’t refill if echo emptied)
   if (chosen.length === 0 && !echoEmptied){
     if (directZeroParent){
       if (parentsHaveTraits && Math.random() < 0.30){
@@ -344,18 +347,20 @@ function breed(p1, p2, grandparentsSet = []) {
     }
   }
 
-  // Direct-zero-parent: sometimes drop one
-  if (directZeroParent && chosen.length >= 1 && Math.random() < PROB.DROP_ONE_IF_DIRECT_ZERO){
+  // direct-zero-parent: drop one sometimes
+  if (directZeroParent && chosen.length >= 1 && Math.random() < 0.25){
     const drop = sample(chosen);
     chosen.splice(chosen.indexOf(drop),1);
   }
 
-  // Post-trim (reduce 3-trait outcomes)
-  if (chosen.length === 3 && Math.random() < PROB.TRIM_3_TO_2){
+  // post-trim (reduce 3-trait outcomes)
+  if (chosen.length === 3 && Math.random() < 0.45){
+    const sharedBoth = intersect(p1Traits, p2Traits);
     const nonShared = chosen.filter(t => !sharedBoth.includes(t));
     const drop = nonShared.length ? sample(nonShared) : sample(chosen);
     chosen.splice(chosen.indexOf(drop), 1);
-  } else if (chosen.length === 2 && Math.random() < PROB.TRIM_2_TO_1){
+  } else if (chosen.length === 2 && Math.random() < 0.10){
+    const sharedBoth = intersect(p1Traits, p2Traits);
     const nonShared = chosen.filter(t => !sharedBoth.includes(t));
     const drop = nonShared.length ? sample(nonShared) : sample(chosen);
     chosen.splice(chosen.indexOf(drop), 1);
@@ -363,7 +368,7 @@ function breed(p1, p2, grandparentsSet = []) {
 
   const unique = [...new Set(chosen)].slice(0, 3);
 
-  // Mutation
+  // mutation
   let hasMutation = false;
   if (
     (p1.traits && p1.hasMutation) ||
@@ -409,7 +414,8 @@ function debugLogBreeding(eventType, p1, p2, gset, result){
 document.querySelectorAll(".breedBtn").forEach((btn,i)=>{
   btn.onclick = ()=>{
     const gpPair = i===0 ? [grandparents[0], grandparents[1]] : [grandparents[2], grandparents[3]];
-    const valid  = gpPair.filter(gp => gp.manual || (Array.isArray(gp.traits) && gp.traits.length !== null));
+    // include [] (None) grandparents so echo works
+    const valid  = gpPair.filter(gp => gp.manual || Array.isArray(gp.traits));
     const newParent = breed(gpPair[0], gpPair[1], valid);
     newParent.id = i===0 ? "p1" : "p2";
     parents[i] = newParent;
@@ -421,7 +427,8 @@ document.querySelectorAll(".breedBtn").forEach((btn,i)=>{
 });
 
 document.getElementById("finalBreed").onclick = async ()=>{
-  const validGP = grandparents.filter(gp => gp.manual || (Array.isArray(gp.traits) && gp.traits.length !== null));
+  // include [] (None) grandparents so echo works
+  const validGP = grandparents.filter(gp => gp.manual || Array.isArray(gp.traits));
   const child = breed(parents[0], parents[1], validGP);
   debugLogBreeding("Parent ➜ Child", parents[0], parents[1], validGP, child);
 
@@ -447,7 +454,7 @@ document.getElementById("finalBreed").onclick = async ()=>{
 };
 
 /* =========================================================
- * 8) MOBILE-ONLY PAN/ZOOM VIEW — smoother drag
+ * 8) MOBILE-ONLY PAN/ZOOM VIEW — smooth + CLAMPED
  * =======================================================*/
 
 const IS_MOBILE = window.matchMedia("(pointer: coarse)").matches || "ontouchstart" in window;
@@ -456,48 +463,70 @@ document.body.classList.toggle("mobile-zoom", IS_MOBILE);
 const ZOOM_MIN=0.5, ZOOM_MAX=2.5, ZOOM_STEP=0.12;
 let scale=1, origin={x:0,y:0};
 
-const DEFER_CONNECTOR_MS = 80; // why: wait for finger to pause
+const DEFER_CONNECTOR_MS = 80;
 let idleConnectorTimer = null;
-let isDragging = false;
+
+// bounds helpers (use *untransformed* sizes)
+function stageSize(){ const r = stage.getBoundingClientRect(); return { w: r.width, h: r.height }; }
+function contentSize(){ return { w: grid.offsetWidth, h: grid.offsetHeight }; }
+
+/** Clamp origin so transformed content stays fully inside the stage. */
+function clampOriginToBounds(){
+  const { w: sw, h: sh } = stageSize();
+  const { w: cw, h: ch } = contentSize();
+  const tw = cw * scale;
+  const th = ch * scale;
+
+  // X axis
+  if (tw <= sw){
+    origin.x = (sw - tw) / 2;        // center & lock
+  } else {
+    const minX = sw - tw;            // content right edge meets stage right
+    const maxX = 0;                  // content left edge meets stage left
+    origin.x = clamp(origin.x, minX, maxX);
+  }
+
+  // Y axis
+  if (th <= sh){
+    origin.y = (sh - th) / 2;        // center & lock
+  } else {
+    const minY = sh - th;            // content bottom meets stage bottom
+    const maxY = 0;                  // content top meets stage top
+    origin.y = clamp(origin.y, minY, maxY);
+  }
+}
 
 function scheduleConnectorsAfterIdle(delay = DEFER_CONNECTOR_MS){
   if (idleConnectorTimer) clearTimeout(idleConnectorTimer);
-  idleConnectorTimer = setTimeout(()=>{
-    scheduleDraw();
-    document.body.classList.remove("panning");
-    isDragging = false;
-  }, delay);
+  idleConnectorTimer = setTimeout(()=>{ scheduleDraw(); }, delay);
 }
 
 function applyTransform(){
-  const t = `translate3d(${origin.x}px, ${origin.y}px, 0) scale(${scale})`; // GPU-friendly
-  if (IS_MOBILE){
-    zoomContent.style.transform = t;
-    if (zoomLabel) zoomLabel.textContent = `${Math.round(scale*100)}%`;
-  } else {
-    zoomContent.style.transform = "none";
-    if (zoomLabel) zoomLabel.textContent = "100%";
-  }
+  clampOriginToBounds(); // keep inside before painting
+  zoomContent.style.transform = IS_MOBILE
+    ? `translate3d(${origin.x}px, ${origin.y}px, 0) scale(${scale})`
+    : "none";
+  if (zoomLabel) zoomLabel.textContent = IS_MOBILE ? `${Math.round(scale*100)}%` : "100%";
 }
 applyTransform();
 
 function fitToStage(){
   if (!IS_MOBILE) return;
-  const s = stage.getBoundingClientRect();
-  const g = grid.getBoundingClientRect();
-  if (!s.width || !g.width) return;
-  const padding=48;
-  const sx=(s.width-padding)/g.width;
-  const sy=(s.height-padding)/g.height;
-  scale = Math.min(ZOOM_MAX, Math.max(ZOOM_MIN, Math.min(sx,sy)));
-  origin.x = (s.width - g.width*scale)/2;
-  origin.y = (s.height - g.height*scale)/2;
+  const { w: sw, h: sh } = stageSize();
+  const { w: cw, h: ch } = contentSize();
+  const padding = 48;
+  const sx = (sw - padding) / cw;
+  const sy = (sh - padding) / ch;
+  scale = Math.min(ZOOM_MAX, Math.max(ZOOM_MIN, Math.min(sx, sy)));
+  // center
+  origin.x = (sw - cw * scale) / 2;
+  origin.y = (sh - ch * scale) / 2;
   applyTransform();
-  scheduleConnectorsAfterIdle(0); // redraw once after fit
+  scheduleConnectorsAfterIdle(0);
 }
 
 if (IS_MOBILE){
-  document.getElementById("zoomFit")?.addEventListener("click", ()=>{ fitToStage(); });
+  document.getElementById("zoomFit")?.addEventListener("click", fitToStage);
   document.getElementById("zoomReset")?.addEventListener("click", ()=>{
     scale=1; origin={x:0,y:0}; applyTransform(); scheduleConnectorsAfterIdle(0);
   });
@@ -509,14 +538,14 @@ if (IS_MOBILE){
   });
 
   let pointers=new Map(); let lastPan={x:0,y:0}; let pinchStart=null;
+
   stage.addEventListener("pointerdown", (e)=>{
     stage.setPointerCapture(e.pointerId);
     pointers.set(e.pointerId,{x:e.clientX,y:e.clientY});
     lastPan={x:e.clientX,y:e.clientY};
-    isDragging = true;
-    document.body.classList.add("panning");
-    if (idleConnectorTimer) clearTimeout(idleConnectorTimer); // why: don't redraw mid-drag
+    if (idleConnectorTimer) clearTimeout(idleConnectorTimer);
   });
+
   stage.addEventListener("pointermove", (e)=>{
     if (!pointers.has(e.pointerId)) return;
     pointers.set(e.pointerId,{x:e.clientX,y:e.clientY});
@@ -524,26 +553,31 @@ if (IS_MOBILE){
     if (pointers.size===1){
       const dx=e.clientX-lastPan.x, dy=e.clientY-lastPan.y;
       origin.x+=dx; origin.y+=dy; lastPan={x:e.clientX,y:e.clientY};
-      applyTransform();
-      // no scheduleDraw here — we defer
-      scheduleConnectorsAfterIdle(); // redraw once when finger pauses
+      applyTransform();                  // clamped
+      scheduleConnectorsAfterIdle();     // redraw once on idle
     } else if (pointers.size===2){
       const pts=[...pointers.values()], c=midpoint(pts[0],pts[1]), dist=distance(pts[0],pts[1]);
       if (!pinchStart){ pinchStart={dist,scale,center:c}; }
       else {
         const targetScale=clamp(pinchStart.scale*(dist/pinchStart.dist), ZOOM_MIN, ZOOM_MAX);
-        const rect=stage.getBoundingClientRect(); const cx=c.x-rect.left, cy=c.y-rect.top;
-        origin.x += (cx/scale)-(cx/targetScale); origin.y += (cy/scale)-(cy/targetScale);
-        scale=targetScale; applyTransform();
-        scheduleConnectorsAfterIdle(); // defer connectors on pinch too
+        const rect=stage.getBoundingClientRect();
+        const cx=c.x-rect.left, cy=c.y-rect.top;
+        // keep pinch center stable-ish
+        origin.x += (cx/scale)-(cx/targetScale);
+        origin.y += (cy/scale)-(cy/targetScale);
+        scale=targetScale;
+        applyTransform();                // clamped
+        scheduleConnectorsAfterIdle();   // defer connectors
       }
     }
   });
+
   ["pointerup","pointercancel","pointerleave"].forEach(type=>{
     stage.addEventListener(type,(e)=>{
       pointers.delete(e.pointerId);
       if (pointers.size < 2) pinchStart=null;
-      scheduleConnectorsAfterIdle(40); // quick redraw after gesture ends
+      applyTransform();                  // final clamp
+      scheduleConnectorsAfterIdle(40);   // quick redraw after gesture ends
     });
   });
 }
@@ -594,7 +628,7 @@ scheduleDraw = createScheduler(drawConnectors);
 [...grandparents, ...parents].forEach(setupTraitDropdown);
 document.querySelectorAll(".randomBtn").forEach((btn,i)=>btn.addEventListener("click", ()=>randomizeCharacter(grandparents[i])));
 
-const ro = new ResizeObserver(()=>scheduleDraw());
+const ro = new ResizeObserver(()=>{ applyTransform(); scheduleDraw(); });
 ro.observe(grid);
 window.addEventListener("load", ()=>{ if (IS_MOBILE) fitToStage(); scheduleDraw(); });
-window.addEventListener("resize", scheduleDraw);
+window.addEventListener("resize", ()=>{ applyTransform(); scheduleDraw(); });
