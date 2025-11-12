@@ -112,3 +112,7 @@ button{ font-size:14px } button:disabled{ opacity:.6; cursor:not-allowed }
   touch-action:none;        /* enable our pointer gestures */
 }
 .mobile-zoom .zoom-content{ will-change:transform }
+
+.mobile-zoom .family-tree-grid{
+  padding-bottom: 120px; /* extra room so the child isn't clipped */
+}
