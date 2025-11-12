@@ -425,13 +425,9 @@ button:disabled {
 }
 
 .mobile-zoom .stage {
-  position: relative;
-  height: min(78vh, 900px);
-  overflow: hidden; /* contain panning content */
-}
+   touch-action: none;
+  }
 
 .mobile-zoom .zoom-content {
-  position: absolute;
-  inset: 0;
-  transform-origin: 0 0; /* stable zooming */
+  will-change: transform;
 }
