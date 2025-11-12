@@ -1,83 +1,162 @@
 <!DOCTYPE html>
 <html lang="en">
+  <head>
+    <!-- Meta -->
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
 
-<head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Breeding System</title>
-  <link rel="stylesheet" href="css/styles.css">
-</head>
+    <!-- Title -->
+    <title>Breeding System</title>
 
-<body>
-  <h1>Three-Generation Breeding Test</h1>
+    <!-- Styles -->
+    <link rel="stylesheet" href="css/styles.css" />
+  </head>
 
-  <!-- GLOBAL RESET BUTTON -->
-  <button class="ResetBtn" id="globalReset">Reset All</button>
-
-  <div class="family-tree">
-    <!-- GRANDPARENT PAIR 1 -->
-    <div class="grandparent-pair">
-      <h2>Grandparent Pair 1</h2>
-      <div class="pair-box">
-        <div class="grandparent" id="gp1">
-          <canvas width="120" height="120"></canvas>
-          <button class="randomBtn">🎲 Randomize GP1</button>
-          <p class="traitText"></p>
-          <div class="traitSelect"></div>
-        </div>
-        <div class="grandparent" id="gp2">
-          <canvas width="120" height="120"></canvas>
-          <button class="randomBtn">🎲 Randomize GP2</button>
-          <p class="traitText"></p>
-          <div class="traitSelect"></div>
-        </div>
+  <body>
+    <!-- =========================================================
+         HEADER
+    ========================================================== -->
+    <header class="site-header">
+      <h1>Three-Generation Breeding</h1>
+      <div class="header-actions">
+        <button class="btn danger" id="globalReset" aria-label="Reset All">
+          ↺ Reset All
+        </button>
       </div>
-    </div>
+    </header>
 
-    <!-- GRANDPARENT PAIR 2 -->
-    <div class="grandparent-pair">
-      <h2>Grandparent Pair 2</h2>
-      <div class="pair-box">
-        <div class="grandparent" id="gp3">
-          <canvas width="120" height="120"></canvas>
-          <button class="randomBtn">🎲 Randomize GP3</button>
-          <p class="traitText"></p>
-          <div class="traitSelect"></div>
-        </div>
-        <div class="grandparent" id="gp4">
-          <canvas width="120" height="120"></canvas>
-          <button class="randomBtn">🎲 Randomize GP4</button>
-          <p class="traitText"></p>
-          <div class="traitSelect"></div>
-        </div>
+    <!-- =========================================================
+         VIEW CONTROLS (visible only in mobile-zoom mode)
+    ========================================================== -->
+    <section class="toolbar" aria-label="View controls">
+      <div class="toolbar-left">
+        <span class="hint">Pan: drag • Zoom: pinch</span>
       </div>
-    </div>
-  </div>
 
-  <!-- PARENTS -->
-  <div class="parents-row">
-    <div class="parent" id="p1">
-      <canvas width="140" height="140"></canvas>
-      <button class="breedBtn">❤️ Breed GP1 + GP2 → P1</button>
-      <p class="traitText"></p>
-      <div class="traitSelect"></div>
-    </div>
-    <div class="parent" id="p2">
-      <canvas width="140" height="140"></canvas>
-      <button class="breedBtn">❤️ Breed GP3 + GP4 → P2</button>
-      <p class="traitText"></p>
-      <div class="traitSelect"></div>
-    </div>
-  </div>
+      <div class="toolbar-right">
+        <button class="btn subtle" id="zoomOut" aria-label="Zoom out">–</button>
+        <span id="zoomLabel" class="zoom-label">100%</span>
+        <button class="btn subtle" id="zoomIn" aria-label="Zoom in">+</button>
 
-  <!-- CHILD -->
-  <div class="child">
-    <canvas id="childCanvas" width="180" height="180"></canvas>
-    <button id="finalBreed">💞 Breed P1 + P2 → Child</button>
-    <p id="traitsDisplay"></p>
-  </div>
+        <div class="divider" aria-hidden="true"></div>
 
-  <script src="js/script.js"></script>
-</body>
+        <button class="btn subtle" id="zoomFit" aria-label="Fit to screen">Fit</button>
+        <button class="btn subtle" id="zoomReset" aria-label="Reset view">Reset View</button>
+      </div>
+    </section>
 
+    <!-- =========================================================
+         STAGE (Desktop: normal flow • Mobile: pannable/zoomable)
+    ========================================================== -->
+    <main id="stage" class="stage" aria-label="Family tree stage">
+      <div id="zoomContent" class="zoom-content">
+        <!-- SVG connectors layer -->
+        <svg id="treeLines" class="tree-lines" aria-hidden="true"></svg>
+
+        <!-- =====================================================
+             FAMILY TREE GRID
+             Keep IDs/classes unchanged for JS bindings
+        ====================================================== -->
+        <div class="family-tree-grid" id="treeGrid">
+          <!-- =========================
+               GRANDPARENT PAIR 1
+          ========================== -->
+          <section class="grandparent-pair" aria-label="Grandparents 1">
+            <p class="pair-title"><strong>Grandparents 1</strong></p>
+
+            <div class="pair-content">
+              <article class="grandparent card" id="gp1" aria-label="Grandparent 1">
+                <canvas width="140" height="140" aria-label="Grandparent 1 sprite"></canvas>
+                <button class="btn primary randomBtn">🎲 Randomize GP1</button>
+                <p class="traitText"></p>
+                <div class="traitSelect"></div>
+              </article>
+
+              <article class="grandparent card" id="gp2" aria-label="Grandparent 2">
+                <canvas width="140" height="140" aria-label="Grandparent 2 sprite"></canvas>
+                <button class="btn primary randomBtn">🎲 Randomize GP2</button>
+                <p class="traitText"></p>
+                <div class="traitSelect"></div>
+              </article>
+            </div>
+          </section>
+
+          <!-- =========================
+               GRANDPARENT PAIR 2
+          ========================== -->
+          <section class="grandparent-pair" aria-label="Grandparents 2">
+            <p class="pair-title"><strong>Grandparents 2</strong></p>
+
+            <div class="pair-content">
+              <article class="grandparent card" id="gp3" aria-label="Grandparent 3">
+                <canvas width="140" height="140" aria-label="Grandparent 3 sprite"></canvas>
+                <button class="btn primary randomBtn">🎲 Randomize GP3</button>
+                <p class="traitText"></p>
+                <div class="traitSelect"></div>
+              </article>
+
+              <article class="grandparent card" id="gp4" aria-label="Grandparent 4">
+                <canvas width="140" height="140" aria-label="Grandparent 4 sprite"></canvas>
+                <button class="btn primary randomBtn">🎲 Randomize GP4</button>
+                <p class="traitText"></p>
+                <div class="traitSelect"></div>
+              </article>
+            </div>
+          </section>
+
+          <!-- =========================
+               PARENT 1
+          ========================== -->
+          <div class="parent-box" id="parent1-box">
+            <article class="parent card" id="p1" aria-label="Parent 1">
+              <p class="card-title"><strong>Parent 1</strong></p>
+              <canvas width="160" height="160" aria-label="Parent 1 sprite"></canvas>
+              <button class="btn love breedBtn">❤️ Breed GP1 + GP2 → P1</button>
+              <p class="traitText"></p>
+              <div class="traitSelect"></div>
+            </article>
+          </div>
+
+          <!-- =========================
+               PARENT 2
+          ========================== -->
+          <div class="parent-box" id="parent2-box">
+            <article class="parent card" id="p2" aria-label="Parent 2">
+              <p class="card-title"><strong>Parent 2</strong></p>
+              <canvas width="160" height="160" aria-label="Parent 2 sprite"></canvas>
+              <button class="btn love breedBtn">❤️ Breed GP3 + GP4 → P2</button>
+              <p class="traitText"></p>
+              <div class="traitSelect"></div>
+            </article>
+          </div>
+
+          <!-- =========================
+               CHILD
+          ========================== -->
+          <div class="child-box">
+            <article class="child card" aria-label="Child">
+              <p class="card-title"><strong>Child</strong></p>
+              <canvas id="childCanvas" width="200" height="200" aria-label="Child sprite"></canvas>
+              <button class="btn success" id="finalBreed">💞 Breed P1 + P2 → Child</button>
+              <p id="traitsDisplay" class="traits-display"></p>
+            </article>
+          </div>
+        </div>
+        <!-- /family-tree-grid -->
+      </div>
+      <!-- /zoom-content -->
+    </main>
+
+    <!-- =========================================================
+         FOOTER
+    ========================================================== -->
+    <footer class="site-footer">
+      <small>&copy; 1Centipede 2025</small>
+    </footer>
+
+    <!-- =========================================================
+         SCRIPTS
+    ========================================================== -->
+    <script src="js/script.js"></script>
+  </body>
 </html>
