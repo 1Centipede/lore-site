@@ -2,69 +2,82 @@
 <html lang="en">
 
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-
-    <title>Breeding System</title>
-    <link rel="stylesheet" href="css/styles.css">
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Breeding System</title>
+  <link rel="stylesheet" href="css/styles.css">
 </head>
 
 <body>
   <h1>Three-Generation Breeding Test</h1>
 
-  <div class="breeding-grid">
-    <!-- GRANDPARENTS -->
-    <div class="grandparents">
-      <div class="gp" id="gp1">
-        <canvas width="120" height="120"></canvas>
-        <button class="randomBtn">🎲 Randomize GP1</button>
-        <p class="traitText"></p>
-        <div class="traitSelect"></div>
-      </div>
-      <div class="gp" id="gp2">
-        <canvas width="120" height="120"></canvas>
-        <button class="randomBtn">🎲 Randomize GP2</button>
-        <p class="traitText"></p>
-        <div class="traitSelect"></div>
-      </div>
-      <div class="gp" id="gp3">
-        <canvas width="120" height="120"></canvas>
-        <button class="randomBtn">🎲 Randomize GP3</button>
-        <p class="traitText"></p>
-        <div class="traitSelect"></div>
-      </div>
-      <div class="gp" id="gp4">
-        <canvas width="120" height="120"></canvas>
-        <button class="randomBtn">🎲 Randomize GP4</button>
-        <p class="traitText"></p>
-        <div class="traitSelect"></div>
+  <!-- GLOBAL RESET BUTTON -->
+  <button class="ResetBtn" id="globalReset">Reset All</button>
+
+  <div class="family-tree">
+    <!-- GRANDPARENT PAIR 1 -->
+    <div class="grandparent-pair">
+      <h2>Grandparent Pair 1</h2>
+      <div class="pair-box">
+        <div class="grandparent" id="gp1">
+          <canvas width="120" height="120"></canvas>
+          <button class="randomBtn">🎲 Randomize GP1</button>
+          <p class="traitText"></p>
+          <div class="traitSelect"></div>
+        </div>
+        <div class="grandparent" id="gp2">
+          <canvas width="120" height="120"></canvas>
+          <button class="randomBtn">🎲 Randomize GP2</button>
+          <p class="traitText"></p>
+          <div class="traitSelect"></div>
+        </div>
       </div>
     </div>
 
-    <!-- PARENTS -->
-    <div class="parents">
-      <div class="parent" id="p1">
-        <canvas width="140" height="140"></canvas>
-        <button class="breedBtn">❤️ Breed GP1 + GP2 → P1</button>
-        <p class="traitText"></p>
-        <div class="traitSelect"></div>
-      </div>
-      <div class="parent" id="p2">
-        <canvas width="140" height="140"></canvas>
-        <button class="breedBtn">❤️ Breed GP3 + GP4 → P2</button>
-        <p class="traitText"></p>
-        <div class="traitSelect"></div>
+    <!-- GRANDPARENT PAIR 2 -->
+    <div class="grandparent-pair">
+      <h2>Grandparent Pair 2</h2>
+      <div class="pair-box">
+        <div class="grandparent" id="gp3">
+          <canvas width="120" height="120"></canvas>
+          <button class="randomBtn">🎲 Randomize GP3</button>
+          <p class="traitText"></p>
+          <div class="traitSelect"></div>
+        </div>
+        <div class="grandparent" id="gp4">
+          <canvas width="120" height="120"></canvas>
+          <button class="randomBtn">🎲 Randomize GP4</button>
+          <p class="traitText"></p>
+          <div class="traitSelect"></div>
+        </div>
       </div>
     </div>
+  </div>
 
-    <!-- CHILD -->
-    <div class="child">
-      <canvas id="childCanvas" width="180" height="180"></canvas>
-      <button id="finalBreed">💞 Breed P1 + P2 → Child</button>
-      <p id="traitsDisplay"></p>
+  <!-- PARENTS -->
+  <div class="parents-row">
+    <div class="parent" id="p1">
+      <canvas width="140" height="140"></canvas>
+      <button class="breedBtn">❤️ Breed GP1 + GP2 → P1</button>
+      <p class="traitText"></p>
+      <div class="traitSelect"></div>
     </div>
+    <div class="parent" id="p2">
+      <canvas width="140" height="140"></canvas>
+      <button class="breedBtn">❤️ Breed GP3 + GP4 → P2</button>
+      <p class="traitText"></p>
+      <div class="traitSelect"></div>
+    </div>
+  </div>
+
+  <!-- CHILD -->
+  <div class="child">
+    <canvas id="childCanvas" width="180" height="180"></canvas>
+    <button id="finalBreed">💞 Breed P1 + P2 → Child</button>
+    <p id="traitsDisplay"></p>
   </div>
 
   <script src="js/script.js"></script>
 </body>
+
 </html>

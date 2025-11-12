@@ -1,13 +1,38 @@
 body {
   background-color: #e3e3e3;
-  font-family: Arial, sans-serif;
+  font-family: 'Gill Sans', sans-serif;
   text-align: center;
-  margin: 0;
-  padding: 0;
+  margin-bottom: 100px;
 }
 
 h1 {
-  margin: 20px 0;
+  padding: 5px 0;
+}
+
+/* FAMILY TREE LAYOUT */
+.family-tree {
+  display: flex;
+  justify-content: center;
+  gap: 80px;
+  margin-bottom: 60px;
+}
+
+.line {
+  width: 80%;
+  height: 3px;
+  background-color: #7b6ef6;
+  margin: 20px auto;
+  border-radius: 2px;
+  box-shadow: 0 0 4px rgba(0,0,0,0.2);
+}
+
+/* Optional: make lines dashed for more “family tree” feel */
+.line.dashed {
+  background-color: transparent;
+  border-top: 2px dashed #7b6ef6;
+  height: 0;
+  margin: 20px auto;
+  box-shadow: none;
 }
 
 .breeding-grid {
@@ -18,16 +43,27 @@ h1 {
   position: relative;
 }
 
-/* GRANDPARENTS AND PARENTS */
-.grandparents,
-.parents {
-  display: flex;
-  justify-content: center;
-  flex-wrap: wrap;
-  gap: 40px;
+/* Each grandparent pair box */
+.grandparent-pair {
+  background-color: #f8f8f8;
+  border: 2px solid #ccc;
+  border-radius: 16px;
+  padding: 20px 30px;
+  box-shadow: 0 4px 8px rgba(0,0,0,0.1);
 }
 
-.gp,
+.grandparent-pair h2 {
+  margin-bottom: 10px;
+}
+
+.pair-box {
+  display: flex;
+  justify-content: center;
+  gap: 20px;
+}
+
+/* GRANDPARENTS & PARENTS */
+.grandparent,
 .parent {
   background: #fff;
   padding: 10px 20px;
@@ -39,19 +75,61 @@ h1 {
   align-items: center;
 }
 
-canvas {
-  border: 2px solid #bbb;
-  border-radius: 10px;
-  background-color: #fdfdfd;
+/* PARENTS ROW */
+.parents-row {
+  display: flex;
+  justify-content: center;
+  align-items: flex-start;
+  gap: 100px;
+  margin-bottom: 60px;
 }
 
+/* CHILD */
+.child {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  background: #fff;
+  padding: 20px 40px;
+  border-radius: 16px;
+  box-shadow: 0 0 12px rgba(0, 0, 0, 0.1);
+}
+
+/* CANVAS STYLE */
+canvas {
+  image-rendering: pixelated;
+  image-rendering: crisp-edges;
+  transform: scale(1);
+  transform-origin: center;
+  margin: 10px 0;
+  border: 2px solid #bbb;
+  border-radius: 10px;
+}
+
+/* GLOBAL RESET BUTTON */
+.ResetBtn {
+  height: 80px;
+  width: 100px;
+  color: white;
+  background-color: crimson;
+  margin-bottom: 50px;
+  border-radius: 50%;
+  border: none;
+  cursor: pointer;
+}
+
+.ResetBtn:hover {
+  background-color: darkred;
+}
+
+/* BUTTONS */
 button {
   margin-top: 10px;
   padding: 6px 10px;
   border: none;
   border-radius: 6px;
   background-color: #7b6ef6;
-  color: rgb(255, 255, 255);
+  color: white;
   cursor: pointer;
   font-weight: bold;
   transition: background 0.2s ease;
@@ -61,7 +139,7 @@ button:hover {
   background-color: #6356d2;
 }
 
-/* TRAIT LIST ON THE RIGHT SIDE OF IMAGE */
+/* TRAITS */
 .traitText {
   text-align: left;
   margin-top: 10px;
@@ -81,14 +159,6 @@ button:hover {
   margin-bottom: 4px;
 }
 
-.child {
-  text-align: center;
-  background: #fff;
-  padding: 15px 30px;
-  border-radius: 16px;
-  box-shadow: 0 0 12px rgba(0, 0, 0, 0.1);
-}
-
 #traitsDisplay {
   background-color: #fafafa;
   border: 1px solid #ddd;
@@ -100,28 +170,7 @@ button:hover {
   display: inline-block;
 }
 
-/* DROPDOWN MENU STYLING */
-.traitSelect {
-  margin-top: 10px;
-  text-align: left;
-}
-
-.traitSelect label {
-  font-weight: bold;
-  display: block;
-  margin-bottom: 4px;
-}
-
-.traitSelect select {
-  width: 180px;
-  border-radius: 8px;
-  border: 1px solid #bbb;
-  padding: 4px;
-  background-color: #fafafa;
-  font-size: 14px;
-}
-
-/* --- NEW MULTI-BUTTON DROPDOWN TRAIT SELECT --- */
+/* --- DROPDOWN MENU BUTTONS --- */
 .dropdownTraits {
   display: flex;
   flex-wrap: wrap;
@@ -133,113 +182,19 @@ button:hover {
   border: 1px solid #aaa;
   background: #f8f8f8;
   border-radius: 6px;
-  padding: 2px 6px;
+  padding: 4px 8px;
   cursor: pointer;
   color: #333;
   font-weight: normal;
+  transition: all 0.2s ease;
+}
+
+.dropdownTraits button:hover {
+  background: #e0e0e0;
 }
 
 .dropdownTraits button.activeTrait {
-  background: #b1d9ff;
-  border-color: #0077ff;
-}
-
-.dropdownTraits button.resetButton {
-  background-color: red;
+  background: #2ecc71;
   color: white;
-}
-
-/* --- FAMILY TREE LINES --- */
-.breeding-grid::before {
-  content: '';
-  position: absolute;
-  width: 2px;
-  background: #aaa;
-  top: 80px; /* space for grandparents */
-  bottom: 60px; /* space for child */
-  left: 50%;
-  transform: translateX(-50%);
-  z-index: 0;
-}
-
-.grandparents,
-.parents,
-.child {
-  position: relative;
-  z-index: 1;
-}
-
-/* --- MOBILE-FRIENDLY TREE LAYOUT --- */
-@media (max-width: 768px) {
-  .breeding-grid {
-    gap: 30px;
-    padding: 10px;
-  }
-
-  .grandparents {
-    display: grid;
-    grid-template-columns: 1fr 1fr;
-    gap: 20px;
-    justify-items: center;
-  }
-
-  .parents {
-    display: grid;
-    grid-template-columns: 1fr 1fr;
-    gap: 20px;
-    justify-items: center;
-  }
-
-  .gp, .parent {
-    width: 90%;
-  }
-
-  .child {
-    width: 90%;
-  }
-
-  .traitText {
-    width: 100%;
-    font-size: 13px;
-    padding: 5px;
-  }
-
-  #traitsDisplay {
-    width: 90%;
-    font-size: 13px;
-    padding: 5px;
-  }
-
-  canvas {
-    width: 100% !important;
-    height: auto !important;
-  }
-
-  button {
-    width: 80%;
-    padding: 8px 0;
-    font-size: 14px;
-  }
-}
-
-/* --- VERY SMALL PHONES --- */
-@media (max-width: 480px) {
-  .grandparents,
-  .parents {
-    grid-template-columns: 1fr;
-  }
-
-  .gp, .parent, .child {
-    width: 95%;
-    padding: 8px;
-  }
-
-  .traitText, #traitsDisplay {
-    font-size: 12px;
-  }
-
-  button {
-    width: 90%;
-    font-size: 13px;
-  }
+  border-color: #27ae60;
 }

@@ -1,3 +1,6 @@
+// ===============================
+// TRAITS + BASE SETUP
+// ===============================
 const allTraits = {
   horns: "images/trait_horns.png",
   tail: "images/trait_tail.png",
@@ -5,23 +8,29 @@ const allTraits = {
   wings: "images/trait_wings.png",
   mane: "images/trait_mane.png",
 };
-
 const baseImage = "images/base.png";
 
 let grandparents = [
-  { id: "gp1", traits: [], hasMutation: false, manual: false },
-  { id: "gp2", traits: [], hasMutation: false, manual: false },
-  { id: "gp3", traits: [], hasMutation: false, manual: false },
-  { id: "gp4", traits: [], hasMutation: false, manual: false },
+  { id: "gp1", traits: null, hasMutation: false, manual: false },
+  { id: "gp2", traits: null, hasMutation: false, manual: false },
+  { id: "gp3", traits: null, hasMutation: false, manual: false },
+  { id: "gp4", traits: null, hasMutation: false, manual: false },
 ];
-
 let parents = [
-  { id: "p1", traits: [], hasMutation: false, manual: false },
-  { id: "p2", traits: [], hasMutation: false, manual: false },
+  { id: "p1", traits: null, hasMutation: false, manual: false },
+  { id: "p2", traits: null, hasMutation: false, manual: false },
 ];
 
-// --- RANDOMIZE CHARACTER ---
+// Helper to ensure a char has an array when adding traits
+function ensureTraitArray(char) {
+  if (!Array.isArray(char.traits)) char.traits = [];
+}
+
+// ===============================
+// RANDOMIZER
+// ===============================
 function randomizeCharacter(char) {
+  ensureTraitArray(char);
   const traitKeys = Object.keys(allTraits);
   const traits = [];
   const traitCount = Math.floor(Math.random() * 4); // 0–3
@@ -32,96 +41,175 @@ function randomizeCharacter(char) {
   }
 
   const hasMutation = Math.random() < 0.15;
-
   char.traits = traits;
   char.hasMutation = hasMutation;
   char.manual = false;
 
-  updateTraitButtons(char.id, traits);
+  if (char.id === "p1") parents[0] = char;
+  if (char.id === "p2") parents[1] = char;
+
+  updateTraitButtons(char.id, char.traits);
   renderCharacter(char.id, char);
 }
 
-// --- BREED FUNCTION ---
-function breed(p1, p2, grandparentsSet) {
-  const traits = [];
-  const allTraitsKeys = Object.keys(allTraits);
+// ===============================
+// BREED FUNCTION
+// ===============================
+function breed(p1, p2, grandparentsSet = []) {
+  const ignoreGrandparents = Boolean(p1.manual || p2.manual);
+  const allKeys = Object.keys(allTraits);
+  const traitScores = new Map();
+  allKeys.forEach(t => traitScores.set(t, 0));
 
-  const side1Traits = [p1.traits, grandparentsSet[0]?.traits || [], grandparentsSet[1]?.traits || []].flat();
-  const side2Traits = [p2.traits, grandparentsSet[2]?.traits || [], grandparentsSet[3]?.traits || []].flat();
+  const sources = [];
+  if (Array.isArray(p1.traits)) sources.push(p1.traits);
+  if (Array.isArray(p2.traits)) sources.push(p2.traits);
+  if (!ignoreGrandparents && Array.isArray(grandparentsSet)) {
+    grandparentsSet.forEach(g => {
+      if (Array.isArray(g.traits)) sources.push(g.traits);
+    });
+  }
 
-  const parentCommons = p1.traits.filter(t => p2.traits.includes(t));
-  parentCommons.forEach(t => {
-    if (!traits.includes(t)) {
-      const side1Has = side1Traits.includes(t);
-      const side2Has = side2Traits.includes(t);
-      const chance = side1Has && side2Has ? 0.95 : 0.5;
-      if (Math.random() < chance) traits.push(t);
+  sources.forEach(arr => {
+    [...new Set(arr)].forEach(tr => {
+      if (traitScores.has(tr)) traitScores.set(tr, traitScores.get(tr) + 1);
+    });
+  });
+
+  const familyMembers = [p1, p2].concat(ignoreGrandparents ? [] : grandparentsSet || []);
+  const zeroTraitHistory = familyMembers.some(
+    m => Array.isArray(m.traits) && m.traits.length === 0
+  );
+
+  const chosen = [];
+  allKeys.forEach(t => {
+    const count = traitScores.get(t) || 0;
+    const p1Has = Array.isArray(p1.traits) && p1.traits.includes(t);
+    const p2Has = Array.isArray(p2.traits) && p2.traits.includes(t);
+    const bothGPHave =
+      !ignoreGrandparents &&
+      Array.isArray(grandparentsSet) &&
+      grandparentsSet.length >= 2 &&
+      grandparentsSet.every(g => Array.isArray(g.traits) && g.traits.includes(t));
+
+      // If both parents have it, or both GPs have it (and no zero-trait history), always inherit
+    if (bothGPHave || (p1Has && p2Has && !zeroTraitHistory)) {
+      if (!chosen.includes(t)) chosen.push(t);
+      return;
+    }
+    // If trait appears in 2+ family members, getting the trait if grandparents lack it
+    if (count >= 2) {
+      if (Math.random() < 0.95 && !chosen.includes(t)) chosen.push(t);
+      return;
+    }
+    if (count === 1) {
+      if (Math.random() < 0.55 && !chosen.includes(t)) chosen.push(t);
     }
   });
 
-  allTraitsKeys.forEach(t => {
-    if (!traits.includes(t)) {
-      const side1Has = side1Traits.includes(t);
-      const side2Has = side2Traits.includes(t);
-      const chance = side1Has && side2Has ? 0.7 : (side1Has || side2Has ? 0.4 : 0);
-      if (Math.random() < chance) traits.push(t);
-    }
-  });
+  const parentsDifferent =
+    new Set([...(Array.isArray(p1.traits) ? p1.traits : []), ...(Array.isArray(p2.traits) ? p2.traits : [])]).size >
+    Math.max((Array.isArray(p1.traits) ? p1.traits.length : 0), (Array.isArray(p2.traits) ? p2.traits.length : 0));
+    // If parents have different traits, 15% chance to mix those into the child
+  if (parentsDifferent && Math.random() < 0.15) {
+    const pool = [...new Set([...(Array.isArray(p1.traits) ? p1.traits : []), ...(Array.isArray(p2.traits) ? p2.traits : [])])].filter(t => !chosen.includes(t));
+    if (pool.length) chosen.push(pool[Math.floor(Math.random() * pool.length)]);
+  }
 
-  const zeroTraitHistory = [p1, p2, ...grandparentsSet].some(x => x.traits.length === 0);
-  let finalCount = zeroTraitHistory ? Math.floor(Math.random() * 4) : Math.floor(Math.random() * 3) + 1;
-  if (!zeroTraitHistory && finalCount === 0) finalCount = 1;
+  const parentsHaveTraits = Array.isArray(p1.traits) && p1.traits.length && Array.isArray(p2.traits) && p2.traits.length;
+  if (!zeroTraitHistory && (p1.manual || p2.manual) && parentsHaveTraits && chosen.length === 0) {
+    const union = [...new Set([...(Array.isArray(p1.traits) ? p1.traits : []), ...(Array.isArray(p2.traits) ? p2.traits : [])])];
+    if (union.length) chosen.push(union[Math.floor(Math.random() * union.length)]);
+  } else if (!zeroTraitHistory && chosen.length === 0 && Math.random() < 0.8) {
+    const union = [
+      ...new Set([
+        ...(Array.isArray(p1.traits) ? p1.traits : []),
+        ...(Array.isArray(p2.traits) ? p2.traits : []),
+        ...((Array.isArray(grandparentsSet) ? grandparentsSet.flatMap(g => (Array.isArray(g.traits) ? g.traits : [])) : [])),
+      ]),
+    ];
+    if (union.length) chosen.push(union[Math.floor(Math.random() * union.length)]);
+  }
 
-  while (traits.length > finalCount) traits.pop();
+  const unique = [...new Set(chosen)].slice(0, 3);
 
   let hasMutation = false;
-  if (p1.hasMutation || p2.hasMutation || grandparentsSet.some(g => g.hasMutation)) {
-    if (Math.random() < 0.2) {
+  if (
+    (Array.isArray(p1.traits) && p1.hasMutation) ||
+    (Array.isArray(p2.traits) && p2.hasMutation) ||
+    (!ignoreGrandparents && Array.isArray(grandparentsSet) && grandparentsSet.some(g => g.hasMutation))
+  ) {
+    if (Math.random() < 0.1) {
       hasMutation = true;
-      if (!traits.includes("mutation")) traits.push("mutation");
+      if (!unique.includes("mutation")) unique.push("mutation");
     }
   }
 
-  return { traits, hasMutation };
+  return { traits: unique, hasMutation };
 }
 
-// --- RENDER CHARACTER ---
+// ===============================
+// RENDER (PIXEL-CRISP)
+// ===============================
 async function renderCharacter(canvasId, char, blank = false) {
   const el = document.querySelector(`#${canvasId} canvas`);
   const ctx = el.getContext("2d");
+  ctx.imageSmoothingEnabled = false;
   ctx.clearRect(0, 0, el.width, el.height);
 
-  if (!blank) {
+  const actuallyBlank = blank || char.traits === null;
+  if (!actuallyBlank) {
     const renderOrder = ["tail", "base", "wings", "ears", "horns", "mane"];
     for (const t of renderOrder) {
       if (t === "base") await drawImage(ctx, baseImage, el.width, el.height);
-      else if (char.traits.includes(t) && allTraits[t]) await drawImage(ctx, allTraits[t], el.width, el.height);
+      else if (Array.isArray(char.traits) && char.traits.includes(t) && allTraits[t])
+        await drawImage(ctx, allTraits[t], el.width, el.height);
     }
-
     if (char.hasMutation) {
-      ctx.fillStyle = "rgba(255, 100, 255, 0.3)";
+      ctx.fillStyle = "rgba(255,100,255,0.3)";
       ctx.fillRect(0, 0, el.width, el.height);
     }
   }
 
   const info = document.querySelector(`#${canvasId} .traitText`);
-  info.textContent = blank
+  info.textContent = actuallyBlank
     ? ""
-    : `Traits: ${char.traits.join(", ") || "None"} ${char.hasMutation ? "(mutation!)" : ""}`;
+    : `Traits: ${Array.isArray(char.traits) ? char.traits.join(", ") : "None"} ${char.hasMutation ? "(mutation!)" : ""}`;
 }
 
+// ===============================
+// DRAW IMAGE HELPER
+// ===============================
 function drawImage(ctx, src, w, h) {
-  return new Promise(resolve => {
+  return new Promise(res => {
     const img = new Image();
     img.onload = () => {
       ctx.drawImage(img, 0, 0, w, h);
-      resolve();
+      res();
     };
     img.src = src;
   });
 }
 
-// --- TRAIT DROPDOWN HANDLING ---
+// ===============================
+// UPDATE TRAIT BUTTONS
+// ===============================
+function updateTraitButtons(charId, traits = []) {
+  const container = document.querySelector(`#${charId} .dropdownTraits`);
+  if (!container) return;
+
+  container.querySelectorAll(".traitBtn").forEach(btn => {
+    if ((btn.textContent === "None" && (!traits || traits.length === 0)) || traits.includes(btn.textContent)) {
+      btn.classList.add("activeTrait");
+    } else {
+      btn.classList.remove("activeTrait");
+    }
+  });
+}
+
+// ===============================
+// DROPDOWN SETUP
+// ===============================
 function setupTraitDropdown(char) {
   const container = document.querySelector(`#${char.id} .traitSelect`);
   const traitKeys = Object.keys(allTraits);
@@ -129,139 +217,148 @@ function setupTraitDropdown(char) {
 
   const label = document.createElement("label");
   label.textContent = "Select Traits:";
-
   const dropdown = document.createElement("div");
   dropdown.classList.add("dropdownTraits");
 
-  // "Reset" option -> completely blank
-  const resetBtn = document.createElement("button");
-  resetBtn.textContent = "Reset";
-  resetBtn.classList.add("resetButton");
-  resetBtn.addEventListener("click", () => {
-    char.traits = [];
-    char.hasMutation = false;
-    char.manual = false;
-
-    flushDependents(char.id, false);
-
-    renderCharacter(char.id, char, true); // blank
-    updateTraitButtons(char.id, char.traits);
-  });
-  dropdown.appendChild(resetBtn);
-
-  // "None" option -> base image only
+  // --- NONE BUTTON ---
   const noneBtn = document.createElement("button");
   noneBtn.textContent = "None";
+  noneBtn.classList.add("traitBtn");
   noneBtn.addEventListener("click", () => {
     char.traits = [];
     char.hasMutation = false;
-    char.manual = true; // manual selection
+    char.manual = true;
+    if (char.id === "p1") parents[0] = char;
+    if (char.id === "p2") parents[1] = char;
 
-    renderCharacter(char.id, char, false); // base image only
+    flushDependents(char.id);
+    renderCharacter(char.id, char, false);
     updateTraitButtons(char.id, char.traits);
   });
   dropdown.appendChild(noneBtn);
 
-  // Trait toggle buttons
+  // --- TRAIT BUTTONS ---
   traitKeys.forEach(trait => {
     const btn = document.createElement("button");
     btn.textContent = trait;
     btn.classList.add("traitBtn");
+
     btn.addEventListener("click", () => {
-      if (char.traits.includes(trait)) {
-        char.traits = char.traits.filter(t => t !== trait);
-      } else {
-        char.traits.push(trait);
-      }
+      ensureTraitArray(char);
+
+      // Toggle trait
+      if (char.traits.includes(trait)) char.traits = char.traits.filter(t => t !== trait);
+      else char.traits.push(trait);
 
       char.manual = true;
-      flushDependents(char.id, true);
 
+      if (char.id === "p1") parents[0] = char;
+      if (char.id === "p2") parents[1] = char;
+
+      flushDependents(char.id);
       renderCharacter(char.id, char);
       updateTraitButtons(char.id, char.traits);
     });
+
     dropdown.appendChild(btn);
   });
 
-  container.appendChild(label);
-  container.appendChild(dropdown);
+  container.append(label, dropdown);
 }
 
-function updateTraitButtons(charId, selectedTraits) {
-  const container = document.querySelector(`#${charId} .traitSelect`);
-  container.querySelectorAll(".traitBtn").forEach(btn => {
-    if (selectedTraits.includes(btn.textContent)) btn.classList.add("activeTrait");
-    else btn.classList.remove("activeTrait");
-  });
-}
-
-// --- FLUSH DEPENDENTS ---
-function flushDependents(charId, manualSelected) {
+// ===============================
+// FLUSH DEPENDENTS
+// ===============================
+function flushDependents(charId) {
   if (charId.startsWith("p")) {
-    // Parent manually selected -> flush grandparents completely blank
     grandparents.forEach(gp => {
-      gp.traits = [];
+      gp.traits = null;
       gp.hasMutation = false;
       gp.manual = false;
-      renderCharacter(gp.id, gp, true); // <-- blank = true
-      updateTraitButtons(gp.id, gp.traits);
+      renderCharacter(gp.id, gp, true);
+      updateTraitButtons(gp.id, []);
     });
   } else if (charId.startsWith("gp")) {
-    // Grandparent manually selected -> flush parents completely blank
     parents.forEach(p => {
-      p.traits = [];
+      p.traits = null;
       p.hasMutation = false;
       p.manual = false;
-      renderCharacter(p.id, p, true); // <-- blank = true
-      updateTraitButtons(p.id, p.traits);
+      renderCharacter(p.id, p, true);
+      updateTraitButtons(p.id, []);
     });
   }
 }
 
-// --- EVENT LISTENERS ---
-document.querySelectorAll(".randomBtn").forEach((btn, i) => {
-  btn.addEventListener("click", () => randomizeCharacter(grandparents[i]));
+// ===============================
+// GLOBAL RESET BUTTON
+// ===============================
+document.getElementById("globalReset")?.addEventListener("click", () => {
+  [...grandparents, ...parents].forEach(ch => {
+    ch.traits = null;
+    ch.hasMutation = false;
+    ch.manual = false;
+    renderCharacter(ch.id, ch, true);
+    updateTraitButtons(ch.id, []);
+  });
+
+  const childCanvas = document.getElementById("childCanvas");
+  if (childCanvas) childCanvas.getContext("2d").clearRect(0, 0, childCanvas.width, childCanvas.height);
+  document.getElementById("traitsDisplay").textContent = "All reset.";
 });
+
+// ===============================
+// BREED BUTTONS + DEBUG
+// ===============================
+function debugLogBreeding(eventType, p1, p2, gset, result) {
+  console.group(`🐾 ${eventType} RESULT`);
+  console.log("Parent1:", p1.id, p1.traits, "Manual:", p1.manual);
+  console.log("Parent2:", p2.id, p2.traits, "Manual:", p2.manual);
+  if (Array.isArray(gset) && gset.length) gset.forEach((gp, i) => console.log(" GP" + (i + 1), gp.id, gp.traits));
+  else console.log("No grandparents used.");
+  console.log("➡️ Result:", result.traits, "Mutation:", result.hasMutation);
+  console.groupEnd();
+}
 
 document.querySelectorAll(".breedBtn").forEach((btn, i) => {
-  btn.addEventListener("click", () => {
+  btn.onclick = () => {
     const gpPair = i === 0 ? [grandparents[0], grandparents[1]] : [grandparents[2], grandparents[3]];
-
-    // Only include grandparents if they have traits or were manually selected
-    const validGPs = gpPair.filter(gp => gp.traits.length > 0 || gp.manual);
-
-    const newParent = breed(
-      gpPair[0],
-      gpPair[1],
-      validGPs.length === 2 ? validGPs : []
-    );
-
+    const valid = gpPair.filter(gp => gp.manual || (Array.isArray(gp.traits) && gp.traits.length));
+    const newParent = breed(gpPair[0], gpPair[1], valid);
     newParent.id = i === 0 ? "p1" : "p2";
     parents[i] = newParent;
+    debugLogBreeding("Grandparents ➜ Parent", gpPair[0], gpPair[1], valid, newParent);
     renderCharacter(newParent.id, newParent);
-  });
+    updateTraitButtons(newParent.id, newParent.traits);
+  };
 });
 
-document.getElementById("finalBreed").addEventListener("click", async () => {
-  const child = breed(parents[0], parents[1], grandparents);
-  const canvas = document.getElementById("childCanvas");
-  const ctx = canvas.getContext("2d");
-  ctx.clearRect(0, 0, canvas.width, canvas.height);
+document.getElementById("finalBreed").onclick = async () => {
+  const validGP = grandparents.filter(gp => gp.manual || (Array.isArray(gp.traits) && gp.traits.length));
+  const child = breed(parents[0], parents[1], validGP);
+  debugLogBreeding("Parent ➜ Child", parents[0], parents[1], validGP, child);
 
-  const renderOrder = ["tail", "base", "wings", "ears", "horns", "mane"];
-  for (const t of renderOrder) {
-    if (t === "base") await drawImage(ctx, baseImage, canvas.width, canvas.height);
-    else if (child.traits.includes(t) && allTraits[t]) await drawImage(ctx, allTraits[t], canvas.width, canvas.height);
+  const c = document.getElementById("childCanvas");
+  const ctx = c.getContext("2d");
+  ctx.clearRect(0, 0, c.width, c.height);
+  ctx.imageSmoothingEnabled = false;
+  const order = ["tail", "base", "wings", "ears", "horns", "mane"];
+  for (const t of order) {
+    if (t === "base") await drawImage(ctx, baseImage, c.width, c.height);
+    else if (Array.isArray(child.traits) && child.traits.includes(t) && allTraits[t]) await drawImage(ctx, allTraits[t], c.width, c.height);
   }
-
   if (child.hasMutation) {
-    ctx.fillStyle = "rgba(255, 100, 255, 0.3)";
-    ctx.fillRect(0, 0, canvas.width, canvas.height);
+    ctx.fillStyle = "rgba(255,100,255,0.3)";
+    ctx.fillRect(0, 0, c.width, c.height);
   }
-
   document.getElementById("traitsDisplay").textContent =
-    `Child traits: ${child.traits.join(", ") || "None"} ${child.hasMutation ? "(mutation!)" : ""}`;
-});
+    `Child traits: ${Array.isArray(child.traits) ? child.traits.join(", ") : "None"} ${child.hasMutation ? "(mutation!)" : ""}`;
+  updateTraitButtons("childCanvas", child.traits);
+};
 
-// --- INIT ---
+// ===============================
+// INIT
+// ===============================
 [...grandparents, ...parents].forEach(setupTraitDropdown);
+document.querySelectorAll(".randomBtn").forEach((btn, i) =>
+  btn.addEventListener("click", () => randomizeCharacter(grandparents[i]))
+);
