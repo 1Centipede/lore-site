@@ -40,6 +40,7 @@ const baseImage = "images/base.png";
 
 /** Layering:
  *  - below base: wings, tail
+ *  - (special under-base overlays like extra_limb)
  *  - base
  *  - above base: body, ears, hair, horns
  */
@@ -202,7 +203,7 @@ async function drawTraitsInOrder(ctx, selected, mutationsSet, width, height){
   const hasExtraTail = mutationsSet && mutationsSet.has("extra_tail");
   const extraTailYOffset = -Math.round(height * 0.08); // ~8% upward
 
-  // below base
+  // BELOW BASE (wings, tail)
   for (const cat of CATS_BELOW_BASE){
     for (const t of selected){
       if (categoryOf(t) === cat && allTraits[t]){
@@ -214,10 +215,16 @@ async function drawTraitsInOrder(ctx, selected, mutationsSet, width, height){
       }
     }
   }
-  // base
+
+  // SPECIAL UNDER-BASE OVERLAY: extra_limb (draw it now so it sits under the base)
+  if (mutationsSet && mutationsSet.has("extra_limb") && MUTATIONS.extra_limb.img){
+    await drawImage(ctx, MUTATIONS.extra_limb.img, width, height);
+  }
+
+  // BASE
   await drawImage(ctx, baseImage, width, height);
 
-  // above base
+  // ABOVE BASE (body, ears, hair, horns)
   for (const cat of CATS_ABOVE_BASE){
     for (const t of selected){
       if (categoryOf(t) === cat && allTraits[t]){
@@ -253,8 +260,9 @@ async function renderCharacter(canvasId, char, blank=false){
     const mutSet = new Set(char.mutations || []);
     await drawTraitsInOrder(ctx, selected, mutSet, el.width, el.height);
 
-    // draw mutation overlays (no tint)
+    // draw mutation overlays (no tint) — skip extra_limb (it was already drawn under base)
     for (const m of (char.mutations || [])){
+      if (m === "extra_limb") continue;
       const info = MUTATIONS[m];
       if (info && info.kind === "overlay" && info.img){
         await drawImage(ctx, info.img, el.width, el.height);
@@ -287,8 +295,9 @@ async function renderToCanvasEl(canvasEl, traits=[], mutations=[]){
   const mutSet = new Set(mutations || []);
   await drawTraitsInOrder(ctx, selected, mutSet, canvasEl.width, canvasEl.height);
 
-  // overlays
+  // overlays — skip extra_limb (already under base)
   for (const m of (mutations || [])){
+    if (m === "extra_limb") continue;
     const info = MUTATIONS[m];
     if (info && info.kind === "overlay" && info.img){
       await drawImage(ctx, info.img, canvasEl.width, canvasEl.height);
