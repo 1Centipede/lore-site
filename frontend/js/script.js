@@ -106,8 +106,14 @@ function clamp(v,min,max){ return Math.min(max, Math.max(min, v)); }
 function distance(a,b){ const dx=a.x-b.x, dy=a.y-b.y; return Math.hypot(dx,dy); }
 function midpoint(a,b){ return { x:(a.x+b.x)/2, y:(a.y+b.y)/2 }; }
 
+/* Robust image loader: never block on 404 */
 function drawImageAt(ctx, src, x, y, w, h){
-  return new Promise((res)=>{ const img=new Image(); img.onload=()=>{ ctx.drawImage(img,x,y,w,h); res(); }; img.src=src; });
+  return new Promise((res)=>{
+    const img = new Image();
+    img.onload = ()=>{ ctx.drawImage(img, x, y, w, h); res(); };
+    img.onerror = ()=>{ console.warn("[img-missing]", src); res(); };
+    img.src = src;
+  });
 }
 function drawImage(ctx, src, w, h){ return drawImageAt(ctx, src, 0, 0, w, h); }
 
@@ -189,7 +195,6 @@ function enforceExclusiveMutations(listOrSet, favor=null){
     const present = group.filter(k => set.has(k));
     if (present.length > 1){
       let keep = favor && present.includes(favor) ? favor : group[0]; // keep priority or clicked one
-      // drop all others in the group
       group.forEach(k => { if (k !== keep) set.delete(k); });
     }
   }
@@ -208,7 +213,6 @@ async function drawTraitsInOrder(ctx, selected, mutationsSet, width, height){
     for (const t of selected){
       if (categoryOf(t) === cat && allTraits[t]){
         await drawImage(ctx, allTraits[t], width, height);
-        // Duplicate tail if mutation present and this trait is a tail
         if (cat === "tail" && hasExtraTail){
           await drawImageAt(ctx, allTraits[t], 0, extraTailYOffset, width, height);
         }
@@ -235,7 +239,6 @@ async function drawTraitsInOrder(ctx, selected, mutationsSet, width, height){
 }
 
 function mutationFilterFromList(mutations=[]){
-  // only albino/melanism apply filters; after exclusivity, at most one exists
   const set = new Set(mutations);
   if (set.has("melanism")) return MUTATIONS.melanism.filter;
   if (set.has("albino"))   return MUTATIONS.albino.filter;
@@ -260,7 +263,7 @@ async function renderCharacter(canvasId, char, blank=false){
     const mutSet = new Set(char.mutations || []);
     await drawTraitsInOrder(ctx, selected, mutSet, el.width, el.height);
 
-    // draw mutation overlays (no tint) — skip extra_limb (it was already drawn under base)
+    // overlays (skip extra_limb — already drawn under base)
     for (const m of (char.mutations || [])){
       if (m === "extra_limb") continue;
       const info = MUTATIONS[m];
@@ -268,12 +271,10 @@ async function renderCharacter(canvasId, char, blank=false){
         await drawImage(ctx, info.img, el.width, el.height);
       }
     }
-    // apply only albino/melanism filter
     const f = mutationFilterFromList(char.mutations);
     if (f) el.style.filter = f;
   }
 
-  // info line with purple mutation chips
   const info = document.querySelector(`#${canvasId} .traitText`);
   if (info){
     const traitList = actuallyBlank ? "—" : (Array.isArray(char.traits) ? char.traits.join(", ") : "None");
@@ -303,7 +304,6 @@ async function renderToCanvasEl(canvasEl, traits=[], mutations=[]){
       await drawImage(ctx, info.img, canvasEl.width, canvasEl.height);
     }
   }
-  // filter only for albino/melanism
   const f = mutationFilterFromList(mutations);
   if (f) canvasEl.style.filter = f;
 }
@@ -436,7 +436,8 @@ function setupTraitDropdown(char){
   container.appendChild(selectRow);
 
   /* ----- Body category (multi-select buttons) ----- */
-  if (groups.body && groups.body.length){
+  const groupsBody = groups.body || [];
+  if (groupsBody.length){
     const label = document.createElement("div");
     label.style.margin = "8px 0 4px";
     label.style.color = "#a6accd";
@@ -445,7 +446,7 @@ function setupTraitDropdown(char){
 
     const wrap = document.createElement("div");
     wrap.classList.add("dropdownTraits");
-    groups.body.forEach(trait=>{
+    groupsBody.forEach(trait=>{
       const btn = document.createElement("button");
       btn.classList.add("traitBtn");
       btn.setAttribute("data-kind","trait");
@@ -486,13 +487,11 @@ function setupTraitDropdown(char){
     btn.textContent = key;
     btn.addEventListener("click", ()=>{
       ensureMutationArray(char);
-      // toggle clicked
       if (char.mutations.includes(key)) {
         char.mutations = char.mutations.filter(m=>m!==key);
       } else {
         char.mutations = [...char.mutations, key];
       }
-      // enforce exclusivity with the clicked one favored
       char.mutations = enforceExclusiveMutations(char.mutations, key);
       char.hasMutation = char.mutations.length > 0;
 
@@ -507,7 +506,6 @@ function setupTraitDropdown(char){
   });
   container.appendChild(mutWrap);
 
-  // initial active states
   updateTraitUI(char.id, Array.isArray(char.traits) ? char.traits : [], Array.isArray(char.mutations) ? char.mutations : []);
 }
 
@@ -559,7 +557,6 @@ function randomizeCharacter(char){
     const m = MUTATIONS[k];
     if (Math.random() < (m.spontaneous || 0)) char.mutations.push(k);
   }
-  // enforce exclusivity on randomize
   char.mutations = enforceExclusiveMutations(char.mutations);
   char.hasMutation = char.mutations.length > 0;
 
@@ -572,10 +569,11 @@ function randomizeCharacter(char){
 }
 
 /**
- * Shared guarantee softened by GP per-trait lack echo.
- * Multi-mutation inheritance (parent > gp > spontaneous).
- * Enforce single-per-category (except body).
- * If EVERYONE (P1, P2, included GPs) has ≥3 traits, force child to end with 3.
+ * Genetics:
+ *  - Parent dominance when both parents have 3+ traits:
+ *      * Grandparent "echo" effects are heavily down-weighted.
+ *      * Force-fill to 3 traits (no trimming).
+ *  - Otherwise use existing probabilities (with mild GP influence).
  */
 function breed(p1, p2, grandparentsSet = []) {
   const keys = Object.keys(allTraits);
@@ -592,9 +590,14 @@ function breed(p1, p2, grandparentsSet = []) {
   const gpCounts = effectiveGPs.map(g => g.traits.length);
   const familyCounts = [p1Count, p2Count, ...gpCounts];
   const minFamilyCount = familyCounts.length ? Math.min(...familyCounts) : 0;
-  const FORCE_THREE = (minFamilyCount >= 3);
 
   const zeroGPCount = effectiveGPs.filter(g => g.traits.length === 0).length;
+
+  // NEW: parent dominance flag & scales (reduce GP influence when both parents are strong)
+  const PARENT_DOMINANCE = (p1Count >= 3 && p2Count >= 3);
+  const GP_ECHO_SCALE     = PARENT_DOMINANCE ? 0.35 : 1.0; // scales per-trait GP-miss drop
+  const GP_ZERO_ECHO_SCALE= PARENT_DOMINANCE ? 0.30 : 1.0; // scales zero-GP empty/drop
+  const FORCE_THREE_BY_PARENTS = PARENT_DOMINANCE;         // force fill to 3 if both parents 3+
 
   const PROB = {
     SINGLE: 0.44,
@@ -632,18 +635,19 @@ function breed(p1, p2, grandparentsSet = []) {
     sharedBoth.forEach(t => { if (!chosen.includes(t)) { chosen.push(t); pinned.add(t); } });
   }
 
-  // ----- PER-TRAIT LACK ECHO ON PINNED -----
+  // ----- PER-TRAIT LACK ECHO ON PINNED (down-weighted if parents dominate) -----
   if (pinned.size && effectiveGPs.length){
     const totalGP = effectiveGPs.length;
     [...pinned].forEach(t=>{
       const gpHave = effectiveGPs.filter(g => g.traits.includes(t)).length;
       const gpMiss = Math.max(0, totalGP - gpHave);
       if (gpMiss > 0){
-        const dropP = clamp(
+        let dropP = clamp(
           PROB.SHARED_MISSING_DROP_BASE + PROB.SHARED_MISSING_DROP_PER_MISS * (gpMiss - 1),
           0,
           PROB.SHARED_MISSING_DROP_CAP
         );
+        dropP *= GP_ECHO_SCALE; // reduce GP influence
         if (Math.random() < dropP){
           const idx = chosen.indexOf(t);
           if (idx > -1) chosen.splice(idx, 1);
@@ -717,7 +721,7 @@ function breed(p1, p2, grandparentsSet = []) {
     if (pool.length) chosen.push(sample(pool));
   }
 
-  // ----- EARLY ANCESTRAL ECHO (0-trait grandparents) -----
+  // ----- EARLY ANCESTRAL ECHO (0-trait grandparents) — down-weight when parents dominate -----
   const allPinnedFullySupported =
     effectiveGPs.length > 0
       ? [...pinned].every(t => effectiveGPs.every(g => g.traits.includes(t)))
@@ -726,8 +730,10 @@ function breed(p1, p2, grandparentsSet = []) {
 
   let echoEmptied = false;
   if (!hardGuarantee3 && zeroGPCount > 0 && parentsHaveTraits){
-    const emptyP = (zeroGPCount === 1) ? PROB.ECHO_EMPTY_1GP : PROB.ECHO_EMPTY_2GP;
-    const dropP  = (zeroGPCount === 1) ? PROB.ECHO_DROP_1GP  : PROB.ECHO_DROP_2GP;
+    let emptyP = (zeroGPCount === 1) ? PROB.ECHO_EMPTY_1GP : PROB.ECHO_EMPTY_2GP;
+    let dropP  = (zeroGPCount === 1) ? PROB.ECHO_DROP_1GP  : PROB.ECHO_DROP_2GP;
+    emptyP *= GP_ZERO_ECHO_SCALE;
+    dropP  *= GP_ZERO_ECHO_SCALE;
     if (Math.random() < emptyP){
       chosen.length = 0;
       echoEmptied = true;
@@ -740,7 +746,7 @@ function breed(p1, p2, grandparentsSet = []) {
     }
   }
 
-  // ----- FALLBACKS -----
+  // ----- FALLBACKS (ignore GP penalty when parents dominate) -----
   if (chosen.length === 0 && !echoEmptied){
     if (directZeroParent){
       if (parentsHaveTraits && Math.random() < 0.30){
@@ -748,7 +754,7 @@ function breed(p1, p2, grandparentsSet = []) {
         if (union.length) chosen.push(sample(union));
       }
     } else {
-      const fallbackP = zeroGPCount > 0 ? 0.55 : 0.70;
+      const fallbackP = (zeroGPCount > 0 && !PARENT_DOMINANCE) ? 0.55 : 0.70;
       if (parentsHaveTraits && Math.random() < fallbackP){
         const union = [...new Set([...p1Traits, ...p2Traits])];
         if (union.length) chosen.push(sample(union));
@@ -768,8 +774,11 @@ function breed(p1, p2, grandparentsSet = []) {
   // Enforce category caps BEFORE trimming
   let enforced = enforceCategoryCapsKeepPinned(chosen, pinned);
 
-  // ----- Force-to-3 when whole family has ≥3 -----
-  if (minFamilyCount >= 3){
+  // ----- Force-to-3 when both parents are strong, else if whole family strong -----
+  if (FORCE_THREE_BY_PARENTS){
+    enforced = fillUpToThree(enforced, pinned, score);
+    // skip trimming — parents dominate
+  } else if (minFamilyCount >= 3){
     enforced = fillUpToThree(enforced, pinned, score);
   } else {
     // normal trimming
