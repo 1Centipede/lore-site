@@ -105,16 +105,14 @@ canvas{
 button{ font-size:14px } button:disabled{ opacity:.6; cursor:not-allowed }
 
 /* MOBILE OVERRIDES */
-.mobile-zoom .toolbar{ display:none !important }
+.mobile-zoom .toolbar{ display:none !important }  /* hide Fit/Reset/% entirely */
 .mobile-zoom .stage{
-  height:min(82vh, 980px);
-  overflow:hidden;
-  touch-action:none;
+  height:min(80vh, 900px);  /* fixed viewport so vertical panning is meaningful */
+  overflow:hidden;          /* keep content inside borders while panning */
+  touch-action:none;        /* enable our pointer gestures */
 }
-.mobile-zoom .zoom-content{
-  will-change:transform;
-  transform-origin: 0 0;         /* <<< critical: scale from top-left so clamps match math */
-}
+.mobile-zoom .zoom-content{ will-change:transform }
+
 .mobile-zoom .family-tree-grid{
-  padding-bottom: 120px;
+  padding-bottom: 120px; /* extra room so the child isn't clipped */
 }
