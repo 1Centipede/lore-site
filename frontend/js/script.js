@@ -85,7 +85,7 @@ async function renderCharacter(canvasId, char, blank=false){
       }
     }
     if (char.hasMutation){
-      ctx.fillStyle = "rgba(255,100,255,0.3)"; // why: visual hint
+      ctx.fillStyle = "rgba(255,100,255,0.3)"; // visual hint
       ctx.fillRect(0,0,el.width,el.height);
     }
   }
@@ -177,7 +177,7 @@ function flushDependents(charId){
 }
 
 /* =========================================================
- * 6) GENETICS (randomize + breed) — shared guarantee + tuned mix
+ * 6) GENETICS (randomize + breed) — shared guarantee + trait-specific echo
  * =======================================================*/
 function randomizeCharacter(char){
   ensureTraitArray(char);
@@ -200,9 +200,11 @@ function randomizeCharacter(char){
 
 /**
  * Breed with:
- * - If both breeders share ≥3 traits: GUARANTEE exactly 3 random shared traits (pinned).
- * - If they share 1–2: GUARANTEE those (pinned).
- * - Rest of mixing rules remain, but never drop pinned.
+ * - If both breeders share ≥3 traits: pick 3 random shared (“pinned”).
+ * - If they share 1–2: pin those.
+ * - NEW: For each pinned shared trait, if ≥1 grandparent LACKS that trait,
+ *        apply a small chance to drop that trait (per-trait “lack echo”).
+ *        (If all grandparents support it, the hard guarantee stands.)
  * - Mutations: direct-parent bias > grandparent bias.
  */
 function breed(p1, p2, grandparentsSet = []) {
@@ -227,22 +229,32 @@ function breed(p1, p2, grandparentsSet = []) {
     DIVERSIFY_PARENT_CLONE: 0.55,
     DROP_ONE_IF_DIRECT_ZERO: 0.25,
     PARENTS_DIFFERENT_BONUS: 0.10,
+
+    // Ancestral echo (any GP has 0 overall)
     ECHO_EMPTY_1GP: 0.03,
     ECHO_DROP_1GP:  0.10,
     ECHO_EMPTY_2GP: 0.06,
     ECHO_DROP_2GP:  0.18,
+
+    // Post trim (reduce 3-trait outcomes; pinned protected)
     TRIM_3_TO_2: 0.45,
     TRIM_2_TO_1: 0.10,
+
+    // NEW: Trait-specific “lack echo” for shared traits
+    // If at least one grandparent lacks trait T, drop T with:
+    SHARED_MISSING_DROP_BASE: 0.06,   // base 6%
+    SHARED_MISSING_DROP_PER_MISS: 0.04, // +4% per additional missing GP
+    SHARED_MISSING_DROP_CAP: 0.18,    // max 18%
   };
 
-  // Family frequency
+  // Family frequency map
   const score = new Map(keys.map(k=>[k,0]));
   const bump = (arr)=>{ if (!Array.isArray(arr)) return; [...new Set(arr)].forEach(t=>score.set(t,(score.get(t)||0)+1)); };
   bump(p1Traits); bump(p2Traits);
   if (Array.isArray(grandparentsSet)) grandparentsSet.forEach(g=>bump(g.traits));
 
   const chosen = [];
-  const pinned = new Set(); // why: protect guaranteed shared from later drops
+  const pinned = new Set(); // protect guaranteed shared unless lack-echo triggers
 
   // ---------- GUARANTEED SHARED ----------
   const sharedBoth = intersect(p1Traits, p2Traits);
@@ -250,8 +262,33 @@ function breed(p1, p2, grandparentsSet = []) {
     const picks = sampleMany(sharedBoth, 3);
     picks.forEach(t => { chosen.push(t); pinned.add(t); });
   } else if (sharedBoth.length > 0){
-    // Guarantee all shared (1–2)
     sharedBoth.forEach(t => { if (!chosen.includes(t)) { chosen.push(t); pinned.add(t); } });
+  }
+
+  // ---------- TRAIT-SPECIFIC ANCESTRAL “LACK” ECHO ON SHARED ----------
+  if (pinned.size && Array.isArray(grandparentsSet) && grandparentsSet.length){
+    // consider only grandparents with trait arrays (including empty [])
+    const effectiveGPs = grandparentsSet.filter(g => Array.isArray(g.traits));
+    const totalGP = effectiveGPs.length;
+
+    if (totalGP > 0){
+      [...pinned].forEach(t=>{
+        const gpHave = effectiveGPs.filter(g => g.traits.includes(t)).length;
+        const gpMiss = Math.max(0, totalGP - gpHave);
+        if (gpMiss > 0){
+          const dropP = clamp(
+            PROB.SHARED_MISSING_DROP_BASE + PROB.SHARED_MISSING_DROP_PER_MISS * (gpMiss - 1),
+            0,
+            PROB.SHARED_MISSING_DROP_CAP
+          );
+          if (Math.random() < dropP){
+            const idx = chosen.indexOf(t);
+            if (idx > -1) chosen.splice(idx, 1);
+            pinned.delete(t);
+          }
+        }
+      });
+    }
   }
 
   // ---------- OTHER SOURCES ----------
@@ -263,7 +300,7 @@ function breed(p1, p2, grandparentsSet = []) {
     const p1Has = p1Traits.includes(t);
     const p2Has = p2Traits.includes(t);
 
-    // Extra shared (beyond guaranteed) kept very low to avoid over-stuffing
+    // Extra shared beyond the pinned ones kept very low
     if (p1Has && p2Has){
       if (chosen.length < 3 && !pinned.has(t) && Math.random() < 0.08) chosen.push(t);
       return;
@@ -292,7 +329,7 @@ function breed(p1, p2, grandparentsSet = []) {
     const p1Only = p1Traits.filter(t=>!p2Traits.includes(t));
     const p2Only = p2Traits.filter(t=>!p1Traits.includes(t));
 
-    const dropFrom = (arr)=>arr.filter(t=>!pinned.has(t)); // protect pinned
+    const dropFrom = (arr)=>arr.filter(t=>!pinned.has(t));
     const nudge = (dropPool, addPool) => {
       const pool = dropFrom(dropPool.length ? dropPool : noMutChosen);
       const drop = pool.length ? sample(pool) : null;
@@ -321,9 +358,15 @@ function breed(p1, p2, grandparentsSet = []) {
     if (pool.length) chosen.push(sample(pool));
   }
 
-  // ---------- EARLY ANCESTRAL ECHO ----------
-  // Never break the hard guarantee when we pinned 3 shared.
-  const hardGuarantee3 = pinned.size >= 3;
+  // ---------- EARLY ANCESTRAL ECHO (0-trait grandparents) ----------
+  // Keep “hard guarantee” ONLY when we still have 3 pinned AND every grandparent supports those pinned traits.
+  const effectiveGPs = Array.isArray(grandparentsSet) ? grandparentsSet.filter(g => Array.isArray(g.traits)) : [];
+  const allPinnedFullySupported =
+    effectiveGPs.length > 0
+      ? [...pinned].every(t => effectiveGPs.every(g => g.traits.includes(t)))
+      : false;
+  const hardGuarantee3 = (pinned.size >= 3) && allPinnedFullySupported;
+
   let echoEmptied = false;
   if (!hardGuarantee3 && zeroGPCount > 0 && parentsHaveTraits){
     const emptyP = (zeroGPCount === 1) ? PROB.ECHO_EMPTY_1GP : PROB.ECHO_EMPTY_2GP;
@@ -368,9 +411,8 @@ function breed(p1, p2, grandparentsSet = []) {
   // ---------- POST-TRIM (reduce 3-trait outcomes; protect pinned) ----------
   if (chosen.length === 3 && Math.random() < PROB.TRIM_3_TO_2){
     const nonPinned = chosen.filter(t=>!pinned.has(t));
-    if (nonPinned.length){ // don't break guarantee
-      const shared = sharedBoth;
-      const nonShared = nonPinned.filter(t => !shared.includes(t));
+    if (nonPinned.length){
+      const nonShared = nonPinned.filter(t => !sharedBoth.includes(t));
       const drop = (nonShared.length ? sample(nonShared) : sample(nonPinned));
       const idx = chosen.indexOf(drop);
       if (idx>-1) chosen.splice(idx, 1);
@@ -378,8 +420,7 @@ function breed(p1, p2, grandparentsSet = []) {
   } else if (chosen.length === 2 && Math.random() < PROB.TRIM_2_TO_1){
     const nonPinned = chosen.filter(t=>!pinned.has(t));
     if (nonPinned.length){
-      const shared = sharedBoth;
-      const nonShared = nonPinned.filter(t => !shared.includes(t));
+      const nonShared = nonPinned.filter(t => !sharedBoth.includes(t));
       const drop = (nonShared.length ? sample(nonShared) : sample(nonPinned));
       const idx = chosen.indexOf(drop);
       if (idx>-1) chosen.splice(idx, 1);
@@ -393,8 +434,8 @@ function breed(p1, p2, grandparentsSet = []) {
   const parentHasMutation = !!((p1 && p1.hasMutation) || (p2 && p2.hasMutation));
   const gpHasMutation = Array.isArray(grandparentsSet) && grandparentsSet.some(g=>g && g.hasMutation);
   let mutP = 0;
-  if (parentHasMutation) mutP = 0.18;
-  else if (gpHasMutation) mutP = 0.07;
+  if (parentHasMutation) mutP = 0.22;  // a bit more common than before
+  else if (gpHasMutation) mutP = 0.07; // still lower from GP-only
   let hasMutation = false;
   if (Math.random() < mutP){
     hasMutation = true;
