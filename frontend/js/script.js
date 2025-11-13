@@ -85,7 +85,7 @@ async function renderCharacter(canvasId, char, blank=false){
       }
     }
     if (char.hasMutation){
-      ctx.fillStyle = "rgba(255,100,255,0.3)"; // why: visual hint
+      ctx.fillStyle = "rgba(255,100,255,0.3)"; // visual hint
       ctx.fillRect(0,0,el.width,el.height);
     }
   }
@@ -177,7 +177,7 @@ function flushDependents(charId){
 }
 
 /* =========================================================
- * 6) GENETICS (randomize + breed) — shared guarantee + tuned mix
+ * 6) GENETICS — shared guarantee + tuned mix
  * =======================================================*/
 function randomizeCharacter(char){
   ensureTraitArray(char);
@@ -199,11 +199,8 @@ function randomizeCharacter(char){
 }
 
 /**
- * Breed with:
- * - If both breeders share ≥3 traits: GUARANTEE exactly 3 random shared traits (pinned).
- * - If they share 1–2: GUARANTEE those (pinned).
- * - Rest of mixing rules remain, but never drop pinned.
- * - Mutations: direct-parent bias > grandparent bias.
+ * Breed with guaranteed shared traits, protected from later drops.
+ * Mutations: direct-parent bias > grandparent bias.
  */
 function breed(p1, p2, grandparentsSet = []) {
   const keys = Object.keys(allTraits);
@@ -242,19 +239,18 @@ function breed(p1, p2, grandparentsSet = []) {
   if (Array.isArray(grandparentsSet)) grandparentsSet.forEach(g=>bump(g.traits));
 
   const chosen = [];
-  const pinned = new Set(); // why: protect guaranteed shared from later drops
+  const pinned = new Set();
 
-  // ---------- GUARANTEED SHARED ----------
+  // Guaranteed shared
   const sharedBoth = intersect(p1Traits, p2Traits);
   if (sharedBoth.length >= 3){
     const picks = sampleMany(sharedBoth, 3);
     picks.forEach(t => { chosen.push(t); pinned.add(t); });
   } else if (sharedBoth.length > 0){
-    // Guarantee all shared (1–2)
     sharedBoth.forEach(t => { if (!chosen.includes(t)) { chosen.push(t); pinned.add(t); } });
   }
 
-  // ---------- OTHER SOURCES ----------
+  // Other sources
   keys.forEach(t=>{
     if (chosen.length >= 3) return;
     if (chosen.includes(t)) return;
@@ -263,38 +259,35 @@ function breed(p1, p2, grandparentsSet = []) {
     const p1Has = p1Traits.includes(t);
     const p2Has = p2Traits.includes(t);
 
-    // Extra shared (beyond guaranteed) kept very low to avoid over-stuffing
     if (p1Has && p2Has){
       if (chosen.length < 3 && !pinned.has(t) && Math.random() < 0.08) chosen.push(t);
       return;
     }
-
     if (count >= 2){
-      if (Math.random() < PROB.MULTI) chosen.push(t);
+      if (Math.random() < 0.82) chosen.push(t);
       return;
     }
-
     if (count === 1){
-      let p = PROB.SINGLE;
+      let p = 0.44;
       const richerP1 = p1Count > p2Count;
       const richerP2 = p2Count > p1Count;
-      if ((p1Has && richerP1) || (p2Has && richerP2)) p -= 0.06; // avoid cloning richer parent
-      if (directZeroParent && (p1Has || p2Has))       p -= 0.06; // fewer-traits bias
-      if (directZeroParent)                           p = Math.min(p, PROB.SINGLE_PARENT_ZERO);
+      if ((p1Has && richerP1) || (p2Has && richerP2)) p -= 0.06;
+      if (directZeroParent && (p1Has || p2Has))       p -= 0.06;
+      if (directZeroParent)                           p = Math.min(p, 0.36);
       p = clamp(p, 0.20, 0.65);
       if (Math.random() < p) chosen.push(t);
     }
   });
 
-  // ---------- DIVERSIFY IF CLONE (don't drop pinned) ----------
+  // Diversify if clone (don’t drop pinned)
   const diversifyIfClone = () => {
     const noMutChosen = chosen.filter(t=>t!=="mutation");
     const p1Only = p1Traits.filter(t=>!p2Traits.includes(t));
     const p2Only = p2Traits.filter(t=>!p1Traits.includes(t));
+    const droppable = (arr)=>arr.filter(t=>!pinned.has(t));
 
-    const dropFrom = (arr)=>arr.filter(t=>!pinned.has(t)); // protect pinned
     const nudge = (dropPool, addPool) => {
-      const pool = dropFrom(dropPool.length ? dropPool : noMutChosen);
+      const pool = droppable(dropPool.length ? dropPool : noMutChosen);
       const drop = pool.length ? sample(pool) : null;
       const add  = addPool.length ? sample(addPool) : null;
       if (drop != null){
@@ -304,30 +297,29 @@ function breed(p1, p2, grandparentsSet = []) {
       if (add && !chosen.includes(add) && chosen.length < 3) chosen.push(add);
     };
 
-    if (equalSets(noMutChosen, p1Traits) && noMutChosen.length && Math.random() < PROB.DIVERSIFY_PARENT_CLONE) {
+    if (equalSets(noMutChosen, p1Traits) && noMutChosen.length && Math.random() < 0.55) {
       p2Only.length ? nudge(noMutChosen.filter(t => !p2Traits.includes(t)), p2Only) : nudge(noMutChosen, []);
-    } else if (equalSets(noMutChosen, p2Traits) && noMutChosen.length && Math.random() < PROB.DIVERSIFY_PARENT_CLONE) {
+    } else if (equalSets(noMutChosen, p2Traits) && noMutChosen.length && Math.random() < 0.55) {
       p1Only.length ? nudge(noMutChosen.filter(t => !p1Traits.includes(t)), p1Only) : nudge(noMutChosen, []);
     }
   };
   diversifyIfClone();
 
-  // ---------- PARENTS-DIFFERENT BONUS ----------
+  // Parents-different bonus
   const parentsDifferent =
     new Set([...p1Traits, ...p2Traits]).size >
     Math.max(p1Count, p2Count);
-  if (parentsDifferent && chosen.length < 3 && Math.random() < PROB.PARENTS_DIFFERENT_BONUS){
+  if (parentsDifferent && chosen.length < 3 && Math.random() < 0.10){
     const pool = [...new Set([...p1Traits, ...p2Traits])].filter(t=>!chosen.includes(t));
     if (pool.length) chosen.push(sample(pool));
   }
 
-  // ---------- EARLY ANCESTRAL ECHO ----------
-  // Never break the hard guarantee when we pinned 3 shared.
+  // Early ancestral echo (don’t break hard guarantee of 3)
   const hardGuarantee3 = pinned.size >= 3;
   let echoEmptied = false;
   if (!hardGuarantee3 && zeroGPCount > 0 && parentsHaveTraits){
-    const emptyP = (zeroGPCount === 1) ? PROB.ECHO_EMPTY_1GP : PROB.ECHO_EMPTY_2GP;
-    const dropP  = (zeroGPCount === 1) ? PROB.ECHO_DROP_1GP  : PROB.ECHO_DROP_2GP;
+    const emptyP = (zeroGPCount === 1) ? 0.03 : 0.06;
+    const dropP  = (zeroGPCount === 1) ? 0.10 : 0.18;
     if (Math.random() < emptyP){
       chosen.length = 0;
       echoEmptied = true;
@@ -340,7 +332,7 @@ function breed(p1, p2, grandparentsSet = []) {
     }
   }
 
-  // ---------- FALLBACKS ----------
+  // Fallbacks
   if (chosen.length === 0 && !echoEmptied){
     if (directZeroParent){
       if (parentsHaveTraits && Math.random() < 0.30){
@@ -356,8 +348,8 @@ function breed(p1, p2, grandparentsSet = []) {
     }
   }
 
-  // ---------- DIRECT-ZERO-PARENT DROP (protect pinned) ----------
-  if (directZeroParent && chosen.length >= 1 && Math.random() < PROB.DROP_ONE_IF_DIRECT_ZERO){
+  // Direct-zero-parent drop (protect pinned)
+  if (directZeroParent && chosen.length >= 1 && Math.random() < 0.25){
     const droppable = chosen.filter(t=>!pinned.has(t));
     if (droppable.length){
       const drop = sample(droppable);
@@ -365,21 +357,19 @@ function breed(p1, p2, grandparentsSet = []) {
     }
   }
 
-  // ---------- POST-TRIM (reduce 3-trait outcomes; protect pinned) ----------
-  if (chosen.length === 3 && Math.random() < PROB.TRIM_3_TO_2){
+  // Post-trim (protect pinned)
+  if (chosen.length === 3 && Math.random() < 0.45){
     const nonPinned = chosen.filter(t=>!pinned.has(t));
-    if (nonPinned.length){ // don't break guarantee
-      const shared = sharedBoth;
-      const nonShared = nonPinned.filter(t => !shared.includes(t));
+    if (nonPinned.length){
+      const nonShared = nonPinned.filter(t => !sharedBoth.includes(t));
       const drop = (nonShared.length ? sample(nonShared) : sample(nonPinned));
       const idx = chosen.indexOf(drop);
       if (idx>-1) chosen.splice(idx, 1);
     }
-  } else if (chosen.length === 2 && Math.random() < PROB.TRIM_2_TO_1){
+  } else if (chosen.length === 2 && Math.random() < 0.10){
     const nonPinned = chosen.filter(t=>!pinned.has(t));
     if (nonPinned.length){
-      const shared = sharedBoth;
-      const nonShared = nonPinned.filter(t => !shared.includes(t));
+      const nonShared = nonPinned.filter(t => !sharedBoth.includes(t));
       const drop = (nonShared.length ? sample(nonShared) : sample(nonPinned));
       const idx = chosen.indexOf(drop);
       if (idx>-1) chosen.splice(idx, 1);
@@ -389,7 +379,7 @@ function breed(p1, p2, grandparentsSet = []) {
   // Unique + cap
   const unique = [...new Set(chosen)].slice(0, 3);
 
-  // ---------- MUTATION (direct parent > grandparent) ----------
+  // Mutations (direct parent > grandparent)
   const parentHasMutation = !!((p1 && p1.hasMutation) || (p2 && p2.hasMutation));
   const gpHasMutation = Array.isArray(grandparentsSet) && grandparentsSet.some(g=>g && g.hasMutation);
   let mutP = 0;
@@ -482,10 +472,19 @@ let scale=1, origin={x:0,y:0};
 const DEFER_CONNECTOR_MS = 80;
 let idleConnectorTimer = null;
 
-function stageSize(){ const r = stage.getBoundingClientRect(); return { w: r.width, h: r.height }; }
-function contentSize(){ return { w: grid.offsetWidth, h: grid.offsetHeight }; }
+const EPS = 0.5; // rounding guard to avoid sticky edges
 
-/** Keep content within stage bounds. */
+function stageSize(){
+  const r = stage.getBoundingClientRect();
+  return { w: r.width, h: r.height };
+}
+function contentSize(){
+  // use precise box (includes padding); +EPS helps prevent premature locking on fractional pixels
+  const r = grid.getBoundingClientRect();
+  return { w: r.width + EPS, h: r.height + EPS };
+}
+
+/** Keep content within stage bounds (works with transform-origin: 0 0). */
 function clampOriginToBounds(){
   const { w: sw, h: sh } = stageSize();
   const { w: cw, h: ch } = contentSize();
@@ -512,7 +511,7 @@ function applyTransform(){
 }
 applyTransform();
 
-/* NOTE: If you want to disable pinch zoom too, set ALLOW_PINCH=false. */
+/* If you want to disable pinch zoom entirely, flip this to false. */
 const ALLOW_PINCH = true;
 
 if (IS_MOBILE){
@@ -541,8 +540,9 @@ if (IS_MOBILE){
         const targetScale=clamp(pinchStart.scale*(dist/pinchStart.dist), ZOOM_MIN, ZOOM_MAX);
         const rect=stage.getBoundingClientRect();
         const cx=c.x-rect.left, cy=c.y-rect.top;
-        origin.x += (cx/scale)-(cx/targetScale);
-        origin.y += (cy/scale)-(cy/targetScale);
+        // keep pinch center roughly stable (with top-left transform origin)
+        origin.x += (cx/scale) - (cx/targetScale);
+        origin.y += (cy/scale) - (cy/targetScale);
         scale=targetScale;
         applyTransform();
         scheduleConnectorsAfterIdle();
@@ -558,6 +558,14 @@ if (IS_MOBILE){
       scheduleConnectorsAfterIdle(40);
     });
   });
+
+  // Handle iOS/Android URL bar show/hide changing the visual viewport height
+  if (window.visualViewport){
+    window.visualViewport.addEventListener("resize", ()=>{
+      applyTransform();
+      scheduleDraw();
+    });
+  }
 }
 
 /* =========================================================
