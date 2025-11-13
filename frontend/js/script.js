@@ -45,6 +45,11 @@ function drawImage(ctx, src, w, h){
 function createScheduler(fn){ let raf=null; return function(){ if(raf) cancelAnimationFrame(raf); raf=requestAnimationFrame(()=>{ fn(); raf=null; }); }; }
 let scheduleDraw = () => {};
 function sample(arr){ return arr[Math.floor(Math.random()*arr.length)] || null; }
+function sampleMany(arr, k){
+  const a = Array.isArray(arr) ? arr.slice() : [];
+  for (let i=a.length-1;i>0;i--){ const j=Math.floor(Math.random()*(i+1)); [a[i],a[j]]=[a[j],a[i]]; }
+  return a.slice(0, Math.max(0, Math.min(k, a.length)));
+}
 function intersect(a,b){
   const A = new Set(Array.isArray(a)?a:[]);
   const B = new Set(Array.isArray(b)?b:[]);
@@ -172,7 +177,7 @@ function flushDependents(charId){
 }
 
 /* =========================================================
- * 6) GENETICS (randomize + breed) — tuned mixing & priorities
+ * 6) GENETICS (randomize + breed) — shared guarantee + tuned mix
  * =======================================================*/
 function randomizeCharacter(char){
   ensureTraitArray(char);
@@ -193,7 +198,13 @@ function randomizeCharacter(char){
   scheduleDraw();
 }
 
-/* Breed (unchanged from your tuned version) */
+/**
+ * Breed with:
+ * - If both breeders share ≥3 traits: GUARANTEE exactly 3 random shared traits (pinned).
+ * - If they share 1–2: GUARANTEE those (pinned).
+ * - Rest of mixing rules remain, but never drop pinned.
+ * - Mutations: direct-parent bias > grandparent bias.
+ */
 function breed(p1, p2, grandparentsSet = []) {
   const keys = Object.keys(allTraits);
 
@@ -213,7 +224,6 @@ function breed(p1, p2, grandparentsSet = []) {
     SINGLE: 0.44,
     SINGLE_PARENT_ZERO: 0.36,
     MULTI: 0.82,
-    ADD_ANOTHER_SHARED: 0.18,
     DIVERSIFY_PARENT_CLONE: 0.55,
     DROP_ONE_IF_DIRECT_ZERO: 0.25,
     PARENTS_DIFFERENT_BONUS: 0.10,
@@ -225,63 +235,71 @@ function breed(p1, p2, grandparentsSet = []) {
     TRIM_2_TO_1: 0.10,
   };
 
+  // Family frequency
   const score = new Map(keys.map(k=>[k,0]));
   const bump = (arr)=>{ if (!Array.isArray(arr)) return; [...new Set(arr)].forEach(t=>score.set(t,(score.get(t)||0)+1)); };
   bump(p1Traits); bump(p2Traits);
   if (Array.isArray(grandparentsSet)) grandparentsSet.forEach(g=>bump(g.traits));
 
   const chosen = [];
+  const pinned = new Set(); // why: protect guaranteed shared from later drops
 
-  // shared first
+  // ---------- GUARANTEED SHARED ----------
   const sharedBoth = intersect(p1Traits, p2Traits);
-  if (sharedBoth.length > 0){
-    chosen.push(sample(sharedBoth));
-    if (sharedBoth.length > 1 && chosen.length < 3 && Math.random() < PROB.ADD_ANOTHER_SHARED){
-      const remaining = sharedBoth.filter(t => !chosen.includes(t));
-      const pick2 = sample(remaining);
-      if (pick2) chosen.push(pick2);
-    }
+  if (sharedBoth.length >= 3){
+    const picks = sampleMany(sharedBoth, 3);
+    picks.forEach(t => { chosen.push(t); pinned.add(t); });
+  } else if (sharedBoth.length > 0){
+    // Guarantee all shared (1–2)
+    sharedBoth.forEach(t => { if (!chosen.includes(t)) { chosen.push(t); pinned.add(t); } });
   }
 
-  // others
+  // ---------- OTHER SOURCES ----------
   keys.forEach(t=>{
+    if (chosen.length >= 3) return;
     if (chosen.includes(t)) return;
+
     const count = score.get(t) || 0;
     const p1Has = p1Traits.includes(t);
     const p2Has = p2Traits.includes(t);
 
+    // Extra shared (beyond guaranteed) kept very low to avoid over-stuffing
     if (p1Has && p2Has){
-      if (Math.random() < 0.08 && chosen.length < 3) chosen.push(t);
+      if (chosen.length < 3 && !pinned.has(t) && Math.random() < 0.08) chosen.push(t);
       return;
     }
+
     if (count >= 2){
-      if (Math.random() < PROB.MULTI && !chosen.includes(t) && chosen.length < 3) chosen.push(t);
+      if (Math.random() < PROB.MULTI) chosen.push(t);
       return;
     }
+
     if (count === 1){
       let p = PROB.SINGLE;
       const richerP1 = p1Count > p2Count;
       const richerP2 = p2Count > p1Count;
-      if ((p1Has && richerP1) || (p2Has && richerP2)) p -= 0.06;
-      if (directZeroParent && (p1Has || p2Has))       p -= 0.06;
+      if ((p1Has && richerP1) || (p2Has && richerP2)) p -= 0.06; // avoid cloning richer parent
+      if (directZeroParent && (p1Has || p2Has))       p -= 0.06; // fewer-traits bias
       if (directZeroParent)                           p = Math.min(p, PROB.SINGLE_PARENT_ZERO);
       p = clamp(p, 0.20, 0.65);
-      if (Math.random() < p && !chosen.includes(t) && chosen.length < 3) chosen.push(t);
+      if (Math.random() < p) chosen.push(t);
     }
   });
 
-  // diversify if clone
+  // ---------- DIVERSIFY IF CLONE (don't drop pinned) ----------
   const diversifyIfClone = () => {
     const noMutChosen = chosen.filter(t=>t!=="mutation");
     const p1Only = p1Traits.filter(t=>!p2Traits.includes(t));
     const p2Only = p2Traits.filter(t=>!p1Traits.includes(t));
 
-    const nudge = (dropFrom, addFrom) => {
-      const drop = (dropFrom.length ? sample(dropFrom) : sample(noMutChosen));
-      const add  = addFrom.length ? sample(addFrom) : null;
-      if (drop != null) {
+    const dropFrom = (arr)=>arr.filter(t=>!pinned.has(t)); // protect pinned
+    const nudge = (dropPool, addPool) => {
+      const pool = dropFrom(dropPool.length ? dropPool : noMutChosen);
+      const drop = pool.length ? sample(pool) : null;
+      const add  = addPool.length ? sample(addPool) : null;
+      if (drop != null){
         const idx = chosen.indexOf(drop);
-        if (idx>-1) chosen.splice(idx, 1);
+        if (idx>-1) chosen.splice(idx,1);
       }
       if (add && !chosen.includes(add) && chosen.length < 3) chosen.push(add);
     };
@@ -294,30 +312,35 @@ function breed(p1, p2, grandparentsSet = []) {
   };
   diversifyIfClone();
 
-  // parents-different bonus
+  // ---------- PARENTS-DIFFERENT BONUS ----------
   const parentsDifferent =
     new Set([...p1Traits, ...p2Traits]).size >
     Math.max(p1Count, p2Count);
-  if (parentsDifferent && Math.random() < PROB.PARENTS_DIFFERENT_BONUS && chosen.length < 3){
+  if (parentsDifferent && chosen.length < 3 && Math.random() < PROB.PARENTS_DIFFERENT_BONUS){
     const pool = [...new Set([...p1Traits, ...p2Traits])].filter(t=>!chosen.includes(t));
     if (pool.length) chosen.push(sample(pool));
   }
 
-  // early ancestral echo
+  // ---------- EARLY ANCESTRAL ECHO ----------
+  // Never break the hard guarantee when we pinned 3 shared.
+  const hardGuarantee3 = pinned.size >= 3;
   let echoEmptied = false;
-  if (zeroGPCount > 0 && parentsHaveTraits){
+  if (!hardGuarantee3 && zeroGPCount > 0 && parentsHaveTraits){
     const emptyP = (zeroGPCount === 1) ? PROB.ECHO_EMPTY_1GP : PROB.ECHO_EMPTY_2GP;
     const dropP  = (zeroGPCount === 1) ? PROB.ECHO_DROP_1GP  : PROB.ECHO_DROP_2GP;
     if (Math.random() < emptyP){
       chosen.length = 0;
       echoEmptied = true;
     } else if (Math.random() < dropP && chosen.length > 0){
-      const drop = sample(chosen);
-      chosen.splice(chosen.indexOf(drop),1);
+      const droppable = chosen.filter(t=>!pinned.has(t));
+      if (droppable.length){
+        const drop = sample(droppable);
+        chosen.splice(chosen.indexOf(drop),1);
+      }
     }
   }
 
-  // fallbacks (don’t refill if echo emptied)
+  // ---------- FALLBACKS ----------
   if (chosen.length === 0 && !echoEmptied){
     if (directZeroParent){
       if (parentsHaveTraits && Math.random() < 0.30){
@@ -333,35 +356,49 @@ function breed(p1, p2, grandparentsSet = []) {
     }
   }
 
-  if (directZeroParent && chosen.length >= 1 && Math.random() < 0.25){
-    const drop = sample(chosen);
-    chosen.splice(chosen.indexOf(drop),1);
+  // ---------- DIRECT-ZERO-PARENT DROP (protect pinned) ----------
+  if (directZeroParent && chosen.length >= 1 && Math.random() < PROB.DROP_ONE_IF_DIRECT_ZERO){
+    const droppable = chosen.filter(t=>!pinned.has(t));
+    if (droppable.length){
+      const drop = sample(droppable);
+      chosen.splice(chosen.indexOf(drop),1);
+    }
   }
 
-  if (chosen.length === 3 && Math.random() < 0.45){
-    const sharedBoth = intersect(p1Traits, p2Traits);
-    const nonShared = chosen.filter(t => !sharedBoth.includes(t));
-    const drop = nonShared.length ? sample(nonShared) : sample(chosen);
-    chosen.splice(chosen.indexOf(drop), 1);
-  } else if (chosen.length === 2 && Math.random() < 0.10){
-    const sharedBoth = intersect(p1Traits, p2Traits);
-    const nonShared = chosen.filter(t => !sharedBoth.includes(t));
-    const drop = nonShared.length ? sample(nonShared) : sample(chosen);
-    chosen.splice(chosen.indexOf(drop), 1);
+  // ---------- POST-TRIM (reduce 3-trait outcomes; protect pinned) ----------
+  if (chosen.length === 3 && Math.random() < PROB.TRIM_3_TO_2){
+    const nonPinned = chosen.filter(t=>!pinned.has(t));
+    if (nonPinned.length){ // don't break guarantee
+      const shared = sharedBoth;
+      const nonShared = nonPinned.filter(t => !shared.includes(t));
+      const drop = (nonShared.length ? sample(nonShared) : sample(nonPinned));
+      const idx = chosen.indexOf(drop);
+      if (idx>-1) chosen.splice(idx, 1);
+    }
+  } else if (chosen.length === 2 && Math.random() < PROB.TRIM_2_TO_1){
+    const nonPinned = chosen.filter(t=>!pinned.has(t));
+    if (nonPinned.length){
+      const shared = sharedBoth;
+      const nonShared = nonPinned.filter(t => !shared.includes(t));
+      const drop = (nonShared.length ? sample(nonShared) : sample(nonPinned));
+      const idx = chosen.indexOf(drop);
+      if (idx>-1) chosen.splice(idx, 1);
+    }
   }
 
+  // Unique + cap
   const unique = [...new Set(chosen)].slice(0, 3);
 
+  // ---------- MUTATION (direct parent > grandparent) ----------
+  const parentHasMutation = !!((p1 && p1.hasMutation) || (p2 && p2.hasMutation));
+  const gpHasMutation = Array.isArray(grandparentsSet) && grandparentsSet.some(g=>g && g.hasMutation);
+  let mutP = 0;
+  if (parentHasMutation) mutP = 0.18;
+  else if (gpHasMutation) mutP = 0.07;
   let hasMutation = false;
-  if (
-    (p1.traits && p1.hasMutation) ||
-    (p2.traits && p2.hasMutation) ||
-    (Array.isArray(grandparentsSet) && grandparentsSet.some(g=>g.hasMutation))
-  ){
-    if (Math.random() < 0.10){
-      hasMutation = true;
-      if (!unique.includes("mutation")) unique.push("mutation");
-    }
+  if (Math.random() < mutP){
+    hasMutation = true;
+    if (!unique.includes("mutation")) unique.push("mutation");
   }
 
   return { traits: unique, hasMutation };
@@ -439,7 +476,7 @@ document.getElementById("finalBreed").onclick = async ()=>{
 const IS_MOBILE = window.matchMedia("(pointer: coarse)").matches || "ontouchstart" in window;
 document.body.classList.toggle("mobile-zoom", IS_MOBILE);
 
-const ZOOM_MIN=0.5, ZOOM_MAX=2.5, ZOOM_STEP=0.12;
+const ZOOM_MIN=0.5, ZOOM_MAX=2.5;
 let scale=1, origin={x:0,y:0};
 
 const DEFER_CONNECTOR_MS = 80;
