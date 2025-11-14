@@ -160,9 +160,9 @@ function enforceCategoryCapsKeepPinned(traitsArr, pinnedSet=new Set()){
   return out;
 }
 
-/** choose more traits (highest family frequency first) to reach 3, respecting category caps */
-function fillUpToThree(current, pinnedSet, score){
-  const need = 3 - current.length;
+/** choose more traits (highest family frequency first) to reach N, respecting category caps */
+function fillUpTo(current, pinnedSet, score, target){
+  const need = target - current.length;
   if (need <= 0) return current;
 
   const canAdd = (key) => {
@@ -180,12 +180,17 @@ function fillUpToThree(current, pinnedSet, score){
   });
 
   for (const k of keys){
-    if (current.length >= 3) break;
+    if (current.length >= target) break;
     if (current.includes(k)) continue;
     if (!canAdd(k)) continue;
     current.push(k);
   }
   return current;
+}
+
+/** convenience wrapper for 3 */
+function fillUpToThree(current, pinnedSet, score){
+  return fillUpTo(current, pinnedSet, score, 3);
 }
 
 /** enforce exclusivity groups on mutation arrays/sets */
@@ -194,7 +199,7 @@ function enforceExclusiveMutations(listOrSet, favor=null){
   for (const group of MUT_EXCLUSIVE_GROUPS){
     const present = group.filter(k => set.has(k));
     if (present.length > 1){
-      let keep = favor && present.includes(favor) ? favor : group[0]; // keep priority or clicked one
+      const keep = (favor && present.includes(favor)) ? favor : group[0];
       group.forEach(k => { if (k !== keep) set.delete(k); });
     }
   }
@@ -551,7 +556,7 @@ function randomizeCharacter(char){
 
   char.traits = picks;
 
-  // spontaneous mutations
+  // spontaneous mutations ONLY when randomizing a standalone character
   char.mutations = [];
   for (const k of Object.keys(MUTATIONS)){
     const m = MUTATIONS[k];
@@ -573,7 +578,10 @@ function randomizeCharacter(char){
  *  - Parent dominance when both parents have 3+ traits:
  *      * Grandparent "echo" effects are heavily down-weighted.
  *      * Force-fill to 3 traits (no trimming).
+ *  - If EVERY member (both parents + considered grandparents) has ≥2 traits,
+ *      * Child is guaranteed to end with at least 2 traits (floor).
  *  - Otherwise use existing probabilities (with mild GP influence).
+ *  - No spontaneous mutations during breeding (inherit only).
  */
 function breed(p1, p2, grandparentsSet = []) {
   const keys = Object.keys(allTraits);
@@ -594,10 +602,10 @@ function breed(p1, p2, grandparentsSet = []) {
   const zeroGPCount = effectiveGPs.filter(g => g.traits.length === 0).length;
 
   // NEW: parent dominance flag & scales (reduce GP influence when both parents are strong)
-  const PARENT_DOMINANCE = (p1Count >= 3 && p2Count >= 3);
-  const GP_ECHO_SCALE     = PARENT_DOMINANCE ? 0.35 : 1.0; // scales per-trait GP-miss drop
-  const GP_ZERO_ECHO_SCALE= PARENT_DOMINANCE ? 0.30 : 1.0; // scales zero-GP empty/drop
-  const FORCE_THREE_BY_PARENTS = PARENT_DOMINANCE;         // force fill to 3 if both parents 3+
+  const PARENT_DOMINANCE   = (p1Count >= 3 && p2Count >= 3);
+  const GP_ECHO_SCALE      = PARENT_DOMINANCE ? 0.35 : 1.0; // scales per-trait GP-miss drop
+  const GP_ZERO_ECHO_SCALE = PARENT_DOMINANCE ? 0.30 : 1.0; // scales zero-GP empty/drop
+  const FORCE_THREE_BY_PARENTS = PARENT_DOMINANCE;          // force fill to 3 if both parents 3+
 
   const PROB = {
     SINGLE: 0.44,
@@ -799,12 +807,17 @@ function breed(p1, p2, grandparentsSet = []) {
         if (idx>-1) enforced.splice(idx, 1);
       }
     }
+
+    // NEW: Floor of 2 traits if EVERYONE has ≥2 traits
+    if (minFamilyCount >= 2 && enforced.length < 2){
+      enforced = fillUpTo(enforced, pinned, score, 2);
+    }
   }
 
   // Unique + final cap
   const unique = [...new Set(enforced)].slice(0, 3);
 
-  // ----- MUTATIONS (multi-type) -----
+  // ----- MUTATIONS (inherit only; no spontaneous during breeding) -----
   const parentMutSet = new Set([
     ...((p1 && p1.mutations) || []),
     ...((p2 && p2.mutations) || []),
@@ -820,10 +833,11 @@ function breed(p1, p2, grandparentsSet = []) {
     const fromParent = parentMutSet.has(key);
     const fromGP     = gpMutSet.has(key);
 
+    // Only inherit if present in parents or grandparents; no spontaneous here
     let p = 0;
     if (fromParent) p = m.parentP || 0;
     else if (fromGP) p = m.gpP || 0;
-    else p = m.spontaneous || 0;
+    else p = 0;
 
     if (Math.random() < p) childMutations.add(key);
   }
@@ -838,18 +852,21 @@ function breed(p1, p2, grandparentsSet = []) {
 /* =========================================================
  * 8) ACTIONS / EVENT HANDLERS
  * =======================================================*/
-document.getElementById("globalReset")?.addEventListener("click", ()=>{
-  [...grandparents, ...parents].forEach(ch=>{
-    ch.traits=null; ch.mutations=[]; ch.hasMutation=false; ch.manual=false;
-    renderCharacter(ch.id, ch, true);
-    updateTraitUI(ch.id, [], []);
+const resetBtn = document.getElementById("globalReset");
+if (resetBtn){
+  resetBtn.addEventListener("click", ()=>{
+    [...grandparents, ...parents].forEach(ch=>{
+      ch.traits=null; ch.mutations=[]; ch.hasMutation=false; ch.manual=false;
+      renderCharacter(ch.id, ch, true);
+      updateTraitUI(ch.id, [], []);
+    });
+    const c = document.getElementById("childCanvas");
+    if (c) c.getContext("2d").clearRect(0,0,c.width,c.height);
+    const td = document.getElementById("traitsDisplay");
+    if (td) td.innerHTML = "All reset.";
+    scheduleDraw();
   });
-  const c = document.getElementById("childCanvas");
-  c?.getContext("2d").clearRect(0,0,c.width,c.height);
-  const td = document.getElementById("traitsDisplay");
-  if (td) td.innerHTML = "All reset.";
-  scheduleDraw();
-});
+}
 
 function debugLogBreeding(eventType, p1, p2, gset, result){
   console.group(`🐾 ${eventType} RESULT`);
@@ -875,23 +892,26 @@ document.querySelectorAll(".breedBtn").forEach((btn,i)=>{
   };
 });
 
-document.getElementById("finalBreed").onclick = async ()=>{
-  const validGP = grandparents.filter(gp => gp.manual || Array.isArray(gp.traits));
-  const child = breed(parents[0], parents[1], validGP);
-  debugLogBreeding("Parent ➜ Child", parents[0], parents[1], validGP, child);
+const finalBreedBtn = document.getElementById("finalBreed");
+if (finalBreedBtn){
+  finalBreedBtn.addEventListener("click", async ()=>{
+    const validGP = grandparents.filter(gp => gp.manual || Array.isArray(gp.traits));
+    const child = breed(parents[0], parents[1], validGP);
+    debugLogBreeding("Parent ➜ Child", parents[0], parents[1], validGP, child);
 
-  const c = document.getElementById("childCanvas");
-  await renderToCanvasEl(c, child.traits, child.mutations);
+    const c = document.getElementById("childCanvas");
+    await renderToCanvasEl(c, child.traits, child.mutations);
 
-  const td = document.getElementById("traitsDisplay");
-  if (td){
-    const muts = (child.mutations && child.mutations.length)
-      ? ` <span class="mut-label">• Mutations:</span> ${child.mutations.map(m=>`<span class="mut-tag">${m}</span>`).join(" ")}`
-      : "";
-    td.innerHTML = `Child traits: ${Array.isArray(child.traits) ? child.traits.join(", ") : "None"}${muts}`;
-  }
-  scheduleDraw();
-};
+    const td = document.getElementById("traitsDisplay");
+    if (td){
+      const muts = (child.mutations && child.mutations.length)
+        ? ` <span class="mut-label">• Mutations:</span> ${child.mutations.map(m=>`<span class="mut-tag">${m}</span>`).join(" ")}`
+        : "";
+      td.innerHTML = `Child traits: ${Array.isArray(child.traits) ? child.traits.join(", ") : "None"}${muts}`;
+    }
+    scheduleDraw();
+  });
+}
 
 /* =========================================================
  * 9) MOBILE-ONLY PAN/ZOOM VIEW — panning UI (toolbar hidden)
@@ -944,7 +964,7 @@ if (IS_MOBILE){
   stage.addEventListener("pointerdown", (e)=>{
     stage.setPointerCapture(e.pointerId);
     pointers.set(e.pointerId,{x:e.clientX,y:e.clientY});
-    lastPan={x:e.clientX,y:e.clientY};
+    lastPan = { x: e.clientX, y: e.clientY };
     if (idleConnectorTimer) clearTimeout(idleConnectorTimer);
   });
 
@@ -954,7 +974,7 @@ if (IS_MOBILE){
 
     if (pointers.size===1){
       const dx=e.clientX-lastPan.x, dy=e.clientY-lastPan.y;
-      origin.x+=dx; origin.y+=dy; lastPan={x:e.clientX,y:e.clientY};
+      origin.x+=dx; origin.y+=dy; lastPan = { x: e.clientX, y: e.clientY };
       applyTransform();
       scheduleConnectorsAfterIdle();
     } else if (ALLOW_PINCH && pointers.size===2){
